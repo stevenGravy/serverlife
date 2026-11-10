@@ -1,0 +1,19 @@
+kind: role
+version: v7
+metadata: { name: serverlife-ci }
+spec:
+  allow:
+    logins: [tester]
+    node_labels: { "*": "*" }
+    # Recordings and live sessions are part of what is tested.
+    rules:
+      - resources: [session, session_tracker]
+        verbs: [list, read]
+  options:
+    record_session: { default: best_effort }
+---
+kind: user
+version: v2
+metadata: { name: ci }
+spec:
+  roles: [serverlife-ci]

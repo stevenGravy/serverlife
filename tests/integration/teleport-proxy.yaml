@@ -1,0 +1,21 @@
+version: v3
+teleport:
+  nodename: proxy
+  data_dir: /var/lib/teleport
+  log: { output: stderr, severity: WARN }
+auth_service:
+  enabled: true
+  cluster_name: sltest
+  proxy_listener_mode: multiplex
+  # Allowed only because TELEPORT_ALLOW_NO_SECOND_FACTOR is set on this
+  # container — a throwaway test cluster, never a pattern for a real one.
+  authentication: { type: local, second_factor: "off" }
+  tokens: ["node:serverlife-it-node-token"]
+proxy_service:
+  enabled: true
+  web_listen_addr: 0.0.0.0:3080
+  public_addr: proxy:3080
+  https_keypairs:
+    - { key_file: /shared/proxy.key, cert_file: /shared/proxy-chain.crt }
+ssh_service:
+  enabled: false

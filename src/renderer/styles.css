@@ -1,0 +1,4203 @@
+/* ---------------------------------------------------------------
+   Theme tokens.
+
+   Dark is the base palette. `data-theme="light"` switches explicitly;
+   with no attribute (theme = automatic) the OS preference decides.
+   `data-accent` recolors the highlight independently of light/dark.
+   Named themes (themes.js) are injected ahead of this file; `data-tone`
+   says whether the one showing is light or dark.
+   --------------------------------------------------------------- */
+:root {
+  --bg: #0f1117;
+  --panel: #161922;
+  --panel-2: #1c202b;
+  --panel-3: #232836;
+  --border: #272d3a;
+  --border-soft: #1f2430;
+  --text: #d8dee9;
+  --text-dim: #9aa5b8;
+  --muted: #6b7689;
+  --accent: #4c8dff;
+  --accent-dim: #2f5db3;
+  --green: #3fb950;
+  --red: #f85149;
+  --amber: #d29922;
+  --purple: #a371f7;
+  --scroll-thumb: #313846;
+  --scroll-thumb-hover: #424b5d;
+  --radius: 6px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+/* Light palette, used by the explicit choice and by the automatic default. */
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --panel: #f5f6f8;
+  --panel-2: #eceef2;
+  --panel-3: #e1e4ea;
+  --border: #d3d7de;
+  --border-soft: #e4e7ec;
+  --text: #1c2128;
+  --text-dim: #4a515c;
+  --muted: #78808d;
+  --accent: #1f6feb;
+  --accent-dim: #7fb0ff;
+  --green: #1a7f37;
+  --red: #cf222e;
+  --amber: #9a6700;
+  --purple: #8250df;
+  --scroll-thumb: #c6cbd3;
+  --scroll-thumb-hover: #adb3bd;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg: #ffffff;
+    --panel: #f5f6f8;
+    --panel-2: #eceef2;
+    --panel-3: #e1e4ea;
+    --border: #d3d7de;
+    --border-soft: #e4e7ec;
+    --text: #1c2128;
+    --text-dim: #4a515c;
+    --muted: #78808d;
+    --accent: #1f6feb;
+    --accent-dim: #7fb0ff;
+    --green: #1a7f37;
+    --red: #cf222e;
+    --amber: #9a6700;
+    --purple: #8250df;
+    --scroll-thumb: #c6cbd3;
+    --scroll-thumb-hover: #adb3bd;
+    color-scheme: light;
+  }
+}
+
+/* Accent skins — applied on top of either palette. */
+:root[data-accent="violet"] { --accent: #a371f7; --accent-dim: #6b42ad; }
+:root[data-accent="teal"]   { --accent: #2bb5a8; --accent-dim: #1c7a71; }
+:root[data-accent="green"]  { --accent: #3fb950; --accent-dim: #2a7d36; }
+:root[data-accent="amber"]  { --accent: #d29922; --accent-dim: #8f6816; }
+:root[data-accent="rose"]   { --accent: #f778ba; --accent-dim: #a84b7d; }
+:root[data-accent="slate"]  { --accent: #8b98ad; --accent-dim: #5a6576; }
+
+:root[data-tone="light"][data-accent="violet"] { --accent: #8250df; --accent-dim: #c4a7f5; }
+:root[data-tone="light"][data-accent="teal"]   { --accent: #1b7f74; --accent-dim: #8fd4cc; }
+:root[data-tone="light"][data-accent="green"]  { --accent: #1a7f37; --accent-dim: #93d3a2; }
+:root[data-tone="light"][data-accent="amber"]  { --accent: #9a6700; --accent-dim: #e0c07a; }
+:root[data-tone="light"][data-accent="rose"]   { --accent: #bf3989; --accent-dim: #f0a8cd; }
+:root[data-tone="light"][data-accent="slate"]  { --accent: #57606a; --accent-dim: #b6bec7; }
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: var(--bg); color: var(--text);
+  font-family: var(--sans); font-size: 13px;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; font-size: inherit; color: inherit; cursor: pointer; }
+input, textarea, select { font-family: inherit; font-size: inherit; color: inherit; }
+.hidden { display: none !important; }
+.spacer { flex: 1; }
+
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* ---------------- Title bar ---------------- */
+#titlebar {
+  display: flex; align-items: stretch;
+  height: 38px; min-height: 38px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.tl-gutter { width: 78px; flex-shrink: 0; }
+
+.tabstrip {
+  display: flex; align-items: stretch;
+  overflow-x: auto; overflow-y: hidden;
+  -webkit-app-region: no-drag;
+  scrollbar-width: none;
+}
+.tabstrip::-webkit-scrollbar { display: none; }
+
+.tab {
+  display: flex; align-items: center; gap: 7px;
+  padding: 0 10px 0 12px;
+  max-width: 230px; min-width: 110px;
+  border-right: 1px solid var(--border-soft);
+  background: transparent; color: var(--text-dim);
+  font-size: 12px; white-space: nowrap;
+  position: relative;
+}
+.tab:hover { background: var(--panel-2); color: var(--text); }
+.tab.active { background: var(--bg); color: var(--text); }
+.tab.active::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px;
+  height: 2px; background: var(--accent);
+}
+.tab .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
+.tab .dot.connected { background: var(--green); }
+.tab .dot.connecting { background: var(--amber); animation: pulse 1.2s infinite; }
+.tab .dot.error { background: var(--red); }
+.tab .dot.local { background: var(--purple); }
+@keyframes pulse { 50% { opacity: .35; } }
+.tab .label { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+
+/*
+ * What the session is doing, next to what it is connected to.
+ *
+ * Three bars that ripple while output is arriving — an equaliser rather than
+ * a spinner, because a spinner in a tab strip reads as "loading", and this
+ * is a shell that is talking. It takes no room when there is nothing to say:
+ * the bars are transparent and the whole mark collapses, so an idle strip
+ * looks exactly as it did before.
+ */
+.tab .tact {
+  /*
+   * One slot, two marks, and the width is reserved whether either is shown.
+   *
+   * A mark that appears and takes space widens its tab, which pushes every
+   * tab after it along and walks the + button back and forth across the
+   * strip as sessions come and go. Nothing should move because a shell
+   * printed a line: the space is held, and only what is drawn in it changes.
+   */
+  position: relative; width: 10px; height: 10px; flex-shrink: 0;
+}
+
+/* Output arriving: an equaliser rather than a spinner, because a spinner in
+ * a tab strip reads as "loading" and this is a shell that is talking. */
+.tab .tact .bars {
+  position: absolute; inset: 0;
+  display: flex; align-items: flex-end; justify-content: center; gap: 1.5px;
+  opacity: 0;
+}
+.tab .tact .bars i { width: 2px; height: 3px; border-radius: 1px; background: var(--accent); }
+.tab.moving .tact .bars { opacity: 1; }
+.tab.moving .tact .bars i { animation: tbar .9s ease-in-out infinite; }
+.tab.moving .tact .bars i:nth-child(2) { animation-delay: .15s; }
+.tab.moving .tact .bars i:nth-child(3) { animation-delay: .3s; }
+@keyframes tbar { 0%, 100% { height: 3px; } 50% { height: 9px; } }
+
+/*
+ * And the one that is not going anywhere until somebody answers it.
+ *
+ * A different shape on purpose: the same bars held still read as output
+ * that has merely paused, which is the opposite of what this means. A
+ * question mark is what it is — something in there is asking you — and it
+ * does not move, because a password prompt is not progress.
+ */
+.tab .tact .ask {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; line-height: 1;
+  color: var(--amber); opacity: 0;
+}
+.tab.waiting .tact .ask { opacity: 1; }
+.tab.waiting { background: color-mix(in srgb, var(--amber) 13%, transparent); color: var(--text); }
+.tab.waiting:hover { background: color-mix(in srgb, var(--amber) 20%, transparent); }
+.tab.waiting .label { color: var(--amber); }
+
+.tab .close {
+  width: 16px; height: 16px; line-height: 14px; text-align: center;
+  border: 0; background: transparent; border-radius: 3px;
+  color: var(--muted); opacity: 0; font-size: 14px; padding: 0;
+}
+.tab:hover .close, .tab.active .close { opacity: 1; }
+.tab .close:hover { background: var(--panel-3); color: var(--text); }
+
+.tab-add {
+  width: 34px; border: 0; background: transparent; color: var(--muted);
+  font-size: 17px; -webkit-app-region: no-drag;
+}
+.tab-add:hover { background: var(--panel-2); color: var(--text); }
+
+.tb-actions { display: flex; align-items: center; gap: 2px; padding-right: 10px; -webkit-app-region: no-drag; }
+
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 26px; padding: 0;
+  border: 0; background: transparent; color: var(--text-dim);
+  border-radius: 5px;
+}
+.icon-btn:hover { background: var(--panel-3); color: var(--text); }
+.icon-btn.active { background: var(--accent-dim); color: #fff; }
+.icon-btn.sm { width: 22px; height: 20px; font-size: 12px; }
+.icon-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------------- Layout ---------------- */
+#body { display: flex; flex: 1; min-height: 0; }
+
+#sidebar {
+  width: 260px; min-width: 170px; max-width: 460px;
+  display: flex; flex-direction: column;
+  background: var(--panel); border-right: 1px solid var(--border);
+}
+#sidebar.collapsed { display: none; }
+/* The host list's own text size (Settings, or ⌘+/⌘− while in it). Applied
+   to what is inside the sidebar, not the sidebar, so its width is kept. */
+#sidebar > * { zoom: var(--sb-zoom, 1); }
+
+.v-resizer { width: 4px; cursor: col-resize; background: transparent; flex-shrink: 0; }
+.v-resizer:hover, .v-resizer.dragging { background: var(--accent-dim); }
+.h-resizer { height: 4px; cursor: row-resize; background: transparent; flex-shrink: 0; }
+.h-resizer:hover, .h-resizer.dragging { background: var(--accent-dim); }
+
+.sb-head { border-bottom: 1px solid var(--border-soft); }
+.sb-tabs { display: flex; }
+.sb-tab {
+  flex: 1; padding: 8px 4px; border: 0; background: transparent;
+  color: var(--muted); font-size: 11.5px; font-weight: 500;
+  border-bottom: 2px solid transparent;
+}
+/* Each tab has its own colour, so which list you are in shows at a glance.
+   Theme variables, so every theme recolours them. */
+.sb-tab[data-tab="hosts"]    { --tab-color: var(--accent); }
+.sb-tab[data-tab="saved"]    { --tab-color: var(--green); }
+.sb-tab[data-tab="teleport"] { --tab-color: var(--purple); }
+.sb-tab { color: color-mix(in srgb, var(--tab-color, var(--muted)) 55%, var(--muted)); }
+.sb-tab:hover { color: var(--tab-color, var(--text)); }
+.sb-tab.active { color: var(--tab-color, var(--text)); border-bottom-color: var(--tab-color, var(--accent)); }
+
+.sb-subtabs { display: flex; gap: 4px; padding: 7px 8px 0; }
+.sb-subtab {
+  flex: 1; padding: 3px 8px; font-size: 11px;
+  background: var(--panel-2); color: var(--muted);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.sb-subtab:hover { color: var(--text-dim); }
+.sb-subtab.active { background: var(--accent-dim); border-color: var(--accent-dim); color: #fff; }
+
+/* All / SSH / K8s: small pills, one colour per kind, filled when chosen. */
+#sb-kind-filter { gap: 3px; padding: 5px 8px 0; }
+.sb-kind-tab {
+  --kind: var(--accent);
+  padding: 1px 8px; font-size: 10px; line-height: 15px; font-weight: 600;
+  background: color-mix(in srgb, var(--kind) 12%, transparent);
+  color: var(--kind);
+  border: 1px solid color-mix(in srgb, var(--kind) 45%, transparent); border-radius: 999px;
+  cursor: pointer;
+}
+.sb-kind-tab[data-kind="ssh"] { --kind: var(--green); }
+.sb-kind-tab[data-kind="kube"] { --kind: var(--purple); }
+.sb-kind-tab:hover { background: color-mix(in srgb, var(--kind) 22%, transparent); }
+.sb-kind-tab.active { background: var(--kind); border-color: var(--kind); color: #fff; }
+
+/* Category headings inside a dropdown. */
+.ctx-heading {
+  padding: 5px 11px 3px; font-size: 9.5px; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+}
+.pane-head .pmacro { color: var(--green); font-size: 9px; }
+.pane-head .pmacro:hover { background: var(--panel-3); color: var(--green); }
+
+.sb-note {
+  padding: 7px 10px; font-size: 11px; color: var(--muted);
+  border-bottom: 1px solid var(--border-soft);
+}
+.sb-note b { color: var(--text-dim); font-weight: 600; }
+.macro-item .name { font-size: 12px; }
+
+.cat-move { display: inline-flex; gap: 1px; margin-left: 4px; }
+.cat-arrow {
+  padding: 0 3px; font-size: 7px; line-height: 1;
+  background: none; border: 0; color: var(--muted); border-radius: 2px;
+}
+.cat-arrow:hover:not(:disabled) { background: var(--panel-3); color: var(--text); }
+.cat-arrow:disabled { opacity: .25; cursor: default; }
+
+.macro-cmd {
+  width: 100%; padding: 7px 9px;
+  background: var(--bg); color: inherit;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-family: var(--mono); font-size: 12px; outline: none; resize: vertical;
+}
+.macro-cmd:focus { border-color: var(--accent-dim); }
+
+/* Multi-exec: command vs macros */
+.mx-tabs { display: flex; gap: 4px; padding: 8px 10px 0; }
+.mx-tab {
+  padding: 3px 11px; font-size: 11.5px;
+  background: var(--panel-2); color: var(--muted);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.mx-tab:hover { color: var(--text-dim); }
+.mx-tab.active { background: var(--accent-dim); border-color: var(--accent-dim); color: #fff; }
+
+.mx-macros { padding: 8px 10px; }
+.mx-macro-head { display: flex; gap: 7px; margin-bottom: 7px; }
+.mx-macro-search { flex: 1; }
+.mx-macro-head input {
+  padding: 5px 8px; background: var(--bg); color: inherit;
+  border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px; outline: none;
+}
+.mx-macro-head input:focus { border-color: var(--accent-dim); }
+.mx-macro-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 4px; max-height: 210px; overflow-y: auto;
+}
+.mx-macro {
+  display: flex; align-items: center; gap: 7px; min-width: 0;
+  padding: 6px 9px; text-align: left;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-left: 2px solid var(--muted); border-radius: var(--radius);
+  font-size: 12px; color: var(--text-dim);
+}
+.mx-macro:hover { background: var(--panel-3); color: var(--text); border-color: var(--accent-dim); }
+.mx-macro.careful { border-left-color: var(--amber); }
+.mx-macro-cat {
+  flex: none; font-size: 9.5px; padding: 1px 5px; border-radius: 3px;
+  background: var(--panel-3); color: var(--muted);
+}
+.mx-macro-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx-macro-empty, .mx-macro-hint { font-size: 11px; color: var(--muted); padding: 6px 2px; }
+
+.sb-search { padding: 7px 8px; }
+.sb-search input {
+  width: 100%; padding: 5px 8px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); outline: none; font-size: 12px;
+}
+.sb-search input:focus { border-color: var(--accent-dim); }
+.sb-search-row { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
+.sb-search-row .badge { margin-left: auto; font-size: 10px; }
+
+.sb-panel { flex: 1; overflow-y: auto; padding: 2px 0 8px; }
+
+.sb-group { margin-bottom: 2px; }
+.sb-group-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px; color: var(--muted);
+  font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  cursor: pointer; user-select: none;
+}
+.sb-group-head:hover { color: var(--text-dim); }
+.sb-group-head .chev { transition: transform .12s; font-size: 9px; }
+.sb-group.collapsed .chev { transform: rotate(-90deg); }
+.sb-group.collapsed .sb-items { display: none; }
+.sb-group-head .count { margin-left: auto; font-weight: 400; opacity: .65; }
+/*
+ * A cluster's own mark. The colour takes the heading's text and a bar down
+ * the group's left edge — the same bar a coloured host row wears, so a red
+ * cluster and a red host inside it read as the same statement rather than
+ * two unrelated decorations. The icon sits before the name, because a
+ * heading is read rather than scanned.
+ */
+.sb-group-head .gico { font-size: 12px; line-height: 1; }
+.sb-group.coloured > .sb-group-head .gname { color: var(--cluster-color); }
+.sb-group.coloured > .sb-group-head .chev { color: var(--cluster-color); opacity: .8; }
+.sb-group.coloured { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--cluster-color) 55%, transparent); }
+
+/* Dragging a group heading reorders the sidebar. */
+.sb-group.dragging { opacity: .45; }
+.sb-group.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.sb-group.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.sb-group-head:active { cursor: grabbing; }
+
+.sb-item {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 10px 5px 20px; cursor: pointer;
+  font-size: 12.5px; color: var(--text-dim);
+  border-left: 2px solid transparent;
+}
+.sb-item:hover { background: var(--panel-2); color: var(--text); }
+.sb-item.active { background: var(--panel-3); color: var(--text); border-left-color: var(--accent); }
+.sb-item.selected { background: var(--accent-dim); color: #fff; }
+/*
+ * The name is what you are scanning for, so it shrinks last and never below a
+ * legible stub: the summary tag carries a far higher shrink factor and gives
+ * up its width first.
+ */
+.sb-item .nwrap {
+  display: flex; align-items: center; gap: 5px;
+  flex: 1 1 auto; min-width: 110px; overflow: hidden;
+}
+.sb-item .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-item .tag {
+  flex: 0 100 auto; min-width: 0; max-width: 38%;
+  font-size: 9.5px; padding: 1px 5px; border-radius: 3px;
+  background: var(--panel-3); color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Badges, not descriptions — there is nothing to truncate them down to. */
+.sb-item .tag.tunnel, .sb-item .tag.mfa, .sb-item .tag.stale, .sb-item .tag.hb { flex: none; max-width: none; }
+/* A node that is answering. Quiet on purpose: it is on every row at once. */
+.sb-item .tag.hb { background: transparent; color: var(--muted); padding: 0 2px; }
+.sb-item .tag.tunnel { background: color-mix(in srgb, var(--purple) 18%, transparent); color: var(--purple); }
+/*
+ * A node that has stopped heartbeating. Amber rather than red, and a badge
+ * rather than a state dot: the node has not failed, it has gone quiet, and
+ * the row it is on is still a row you can click.
+ */
+.sb-item .tag.stale {
+  background: color-mix(in srgb, var(--amber) 18%, transparent);
+  color: var(--amber);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
+  padding: 0 4px;
+}
+.sb-item .st { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.sb-item .st.connected { background: var(--green); }
+.sb-item .st.error { background: var(--red); }
+.sb-item .ck { width: 13px; height: 13px; flex-shrink: 0; accent-color: var(--accent); margin: 0; }
+
+/* ------------------------------------------------------------------ */
+/* Folders in the host list                                            */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A folder row reads as a container, not as another host: the disclosure
+ * triangle and the folder glyph are the two things every file manager has
+ * trained people to look for, and the row is a shade heavier than the hosts
+ * underneath it so a shut folder is not mistaken for one of them.
+ *
+ * `--depth` is the nesting, set on the row. The step is small on purpose —
+ * four levels deep still has to leave room for a hostname.
+ */
+.sb-folder {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px 4px calc(10px + var(--depth, 0) * 16px);
+  position: relative;
+  font-size: 12.5px; color: var(--text-dim); cursor: default;
+  border-left: 2px solid transparent; user-select: none;
+}
+.sb-folder:hover { background: var(--panel-2); color: var(--text); }
+.sb-folder .chev { font-size: 8px; width: 9px; color: var(--muted); flex: none; }
+.sb-folder .fico { font-size: 11px; flex: none; filter: grayscale(0.35); }
+.sb-folder .name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-folder .count {
+  font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none;
+}
+.sb-folder .tag.rule {
+  flex: none; font-size: 9px; padding: 0 4px; border-radius: 3px;
+  background: var(--accent-dim); color: var(--text);
+}
+.sb-folder.dragging { opacity: 0.45; }
+/* The drop target, on a folder row or a folder tile in the big view. */
+.sb-folder.drop-in, .fv-trow.drop-in, .fv-row.folder.drop-in {
+  background: var(--accent-dim); color: #fff; border-left-color: var(--accent);
+}
+/*
+ * A coloured folder takes the same bar its hosts take, so a red folder and a
+ * red host read as the same mark rather than two unrelated decorations.
+ */
+.sb-folder.coloured { border-left-color: var(--folder-color); }
+.sb-folder.coloured .name { color: var(--folder-color); }
+
+/*
+ * The mark on a host being watched for disappearance.
+ *
+ * Big enough to see and in its own colours: a grey outline glyph at 8.5px
+ * was indistinguishable from the punctuation around it, which defeats the
+ * point of marking anything. Emoji, so it reads at a glance in a column of
+ * text without needing a legend.
+ */
+.sb-item .hwatch, .fv-row .hwatch, .hp-card .hwatch {
+  font-size: 10.5px; line-height: 1; flex: none;
+}
+
+/* An icon on a host row. Sized down: it sits beside a name, not over it. */
+.sb-item .hico, .fv-row .hico {
+  font-size: 11px; line-height: 1; flex: none;
+  filter: saturate(0.9);
+}
+
+/* A kube cluster row's own mark — a plain glyph, not a colourful emoji like
+ * a chosen host icon, so it needs to run larger than .hico to still read
+ * at a glance. */
+.sb-item .kube-ico {
+  font-size: 15px; line-height: 1; flex: none;
+  color: var(--accent);
+}
+
+/*
+ * Two nodes with one hostname. Sits with the host's own icon rather than
+ * among the tags: it is a fact about which machine this row is, not a
+ * label the cluster put on it.
+ */
+.sb-item .hdupe, .hp-line .hdupe { font-size: 10.5px; line-height: 1; opacity: .85; flex-shrink: 0; }
+
+/*
+ * A host that is alive but out of reach. Boxed like the other badges — it
+ * is a state, not a label the cluster put on it — and deliberately not red:
+ * nothing is broken and nothing is lost, there is simply something to ask
+ * for, and the row's double-click asks it.
+ *
+ * Scoped to rows, because a cluster heading already has a `req` badge
+ * meaning something adjacent but different: how many requests are
+ * outstanding on that cluster, rather than what could be asked for.
+ */
+.sb-item .tag.req, .hp-card .tag.req, .hp-line .tag.req, .fv-row .tag.req {
+  flex: none; max-width: none; padding: 0 4px; font-size: 9px; border-radius: 3px;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  font-weight: 600; letter-spacing: .02em; cursor: pointer;
+}
+
+/*
+ * A host that is not there any more.
+ *
+ * Still drawn, because being told is the whole point of having marked it —
+ * but visibly a record rather than a machine: dimmed, its name struck
+ * through, and nothing on it clickable except the menu that forgets it.
+ * Amber, not red: nothing is broken, something is absent.
+ */
+.sb-item.missing { opacity: .72; }
+.sb-item.missing .name { text-decoration: line-through; text-decoration-thickness: 1px; }
+.sb-item.missing .st { background: var(--amber); }
+/*
+ * Drawn from a record, not read live: a watched host whose cluster
+ * cannot currently be checked, or one of its neighbours shown only
+ * because Settings has "Show the last known hosts" on. Dimmer than
+ * `.missing` — nothing here has been declared gone, only unconfirmed.
+ */
+.sb-item.unconfirmed { opacity: .6; }
+.sb-item .tag.gone, .hp-card .tag.gone {
+  flex: none; max-width: none; padding: 0 4px; font-size: 9px; border-radius: 3px;
+  color: var(--amber); background: color-mix(in srgb, var(--amber) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
+}
+.hp-card.missing { opacity: .72; }
+.hp-card.missing .hp-name { text-decoration: line-through; text-decoration-thickness: 1px; }
+.hp-card.missing .st { background: var(--amber); }
+
+/*
+ * A host inside a folder, set in under it.
+ *
+ * The indent has to beat the row's own 20px of padding by enough to read as
+ * a step rather than a wobble — the first attempt gained one pixel at the
+ * first level, which said nothing — so it is a clear 16px per level from
+ * there, with a hairline rail down the folder's contents. The rail is a
+ * pseudo-element rather than a background, because the hover and selected
+ * rules set `background` wholesale and would paint over it.
+ */
+.sb-item.in-folder {
+  position: relative;
+  padding-left: calc(26px + var(--depth, 0) * 16px);
+}
+.sb-item.in-folder::before,
+.sb-folder[style*="--depth:1"]::before,
+.sb-folder[style*="--depth:2"]::before,
+.sb-folder[style*="--depth:3"]::before {
+  content: '';
+  position: absolute;
+  left: calc(16px + (var(--depth, 1) - 1) * 16px);
+  top: 0; bottom: 0; width: 1px;
+  background: var(--border-soft);
+}
+/* The tag strip lines up under the name it belongs to, at any depth. */
+.sb-item.in-folder .sb-tags { padding-left: calc(var(--depth, 0) * 16px); }
+
+/* A host row showing its full tag strip stacks instead of sitting on one line. */
+.sb-item.has-tags { flex-direction: column; align-items: stretch; gap: 3px; padding-bottom: 6px; }
+.sb-item.has-tags .sb-line { display: flex; align-items: center; gap: 7px; }
+.sb-tags { display: flex; flex-wrap: wrap; gap: 3px; padding-left: 26px; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  max-width: 100%; min-width: 0; padding: 1px 5px;
+  font-size: 9.5px; font-family: var(--mono); line-height: 1.5;
+  background: var(--panel-3); color: var(--text-dim);
+  border: 1px solid transparent; border-radius: 3px;
+  cursor: pointer; white-space: nowrap; overflow: hidden;
+}
+.chip:hover { border-color: var(--accent-dim); color: var(--text); }
+.chip.on { background: var(--accent-dim); color: #fff; border-color: var(--accent); }
+.chip .k { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; opacity: .6; }
+.chip .k::after { content: '='; opacity: .5; margin-left: 3px; }
+.chip .v { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chip .n { flex: none; opacity: .55; font-variant-numeric: tabular-nums; }
+.chip.on .k, .chip.on .n { opacity: .8; }
+.chip.more { font-style: italic; }
+
+/* Tag browser */
+.tagb-search {
+  width: 100%; padding: 6px 9px; margin-bottom: 11px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); outline: none; font-size: 12.5px; color: inherit;
+}
+.tagb-search:focus { border-color: var(--accent-dim); }
+.tagb-body { max-height: min(52vh, 460px); overflow-y: auto; }
+.tagb-group { padding: 7px 0; border-top: 1px solid var(--border-soft); }
+.tagb-group:first-child { border-top: 0; padding-top: 0; }
+/* Label keys are case-sensitive, so they are shown exactly as Teleport has them. */
+.tagb-key {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 5px;
+  font-size: 11.5px; font-weight: 600; font-family: var(--mono);
+  color: var(--text-dim); word-break: break-all;
+}
+.tagb-values { display: flex; flex-wrap: wrap; gap: 4px; }
+.tagb-values .chip { font-size: 11px; padding: 2px 7px; }
+/* Access-request resource picker */
+.rq-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.rq-head select {
+  padding: 4px 8px; background: var(--bg); color: inherit;
+  border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px;
+}
+.rq-body { max-height: min(50vh, 440px); overflow-y: auto; margin-top: 4px; }
+.rq-list { display: flex; flex-direction: column; gap: 2px; }
+.rq-row {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 7px 9px; border-radius: var(--radius);
+  border: 1px solid transparent; cursor: pointer;
+}
+.rq-row:hover { background: var(--panel-2); }
+.rq-row.on { background: var(--panel-3); border-color: var(--accent-dim); }
+.rq-row .ck { margin-top: 2px; flex: none; accent-color: var(--accent); }
+.rq-main { min-width: 0; flex: 1; }
+.rq-name { font-size: 13px; color: var(--text); word-break: break-word; }
+.rq-id {
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rq-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+
+/* Chosen roles and resources on the request form */
+.rq-field { margin-bottom: 13px; }
+.rq-field-head { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
+.rq-field-head label { font-size: 11px; color: var(--muted); }
+.rq-chosen {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+  min-height: 30px; padding: 6px 8px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.rq-chosen .hint { margin: 0; }
+.rq-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 12px; }
+.rq-time { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rq-time label { font-size: 11px; color: var(--muted); }
+.rq-time input {
+  width: 100%; padding: 5px 8px;
+  background: var(--bg); color: inherit;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: 12px; outline: none;
+}
+.rq-time input:focus { border-color: var(--accent-dim); }
+.rq-time-hint { font-size: 10px; color: var(--muted); opacity: .8; }
+.rq-cmd { margin-bottom: 4px; }
+.rq-cmd > summary {
+  display: flex; align-items: center; gap: 9px;
+  padding: 3px 0; cursor: pointer; list-style: none;
+  font-size: 11px; color: var(--muted);
+}
+.rq-cmd > summary::-webkit-details-marker { display: none; }
+.rq-cmd > summary::before {
+  content: '▸'; font-size: 9px; transition: transform .12s; display: inline-block;
+}
+.rq-cmd[open] > summary::before { transform: rotate(90deg); }
+.rq-cmd > summary:hover { color: var(--text-dim); }
+.rq-cmd > summary .ghost-btn { margin-left: auto; }
+.rq-preview {
+  margin-top: 5px;
+  font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px 10px;
+  max-height: 96px; overflow-y: auto; word-break: break-all; white-space: pre-wrap;
+}
+@media (max-width: 560px) { .rq-times { grid-template-columns: minmax(0, 1fr); } }
+
+/* Network tools */
+.nt-head { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 9px; }
+.nt-target { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.nt-tool { flex: none; display: flex; flex-direction: column; gap: 3px; }
+.nt-head label { font-size: 11px; color: var(--muted); }
+.nt-head input, .nt-head select {
+  padding: 5px 8px; background: var(--bg); color: inherit;
+  border: 1px solid var(--border); border-radius: var(--radius); font-size: 12.5px; outline: none;
+}
+.nt-head input:focus, .nt-head select:focus { border-color: var(--accent-dim); }
+.nt-head input:disabled { opacity: .45; }
+.nt-options { display: flex; gap: 12px; margin-bottom: 9px; flex-wrap: wrap; }
+.nt-opt { display: flex; flex-direction: column; gap: 3px; }
+.nt-opt label { font-size: 11px; color: var(--muted); }
+.nt-opt input {
+  padding: 4px 8px; background: var(--bg); color: inherit;
+  border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px; outline: none;
+}
+.nt-opt-hint { font-size: 10px; color: var(--muted); opacity: .8; }
+.nt-body { max-height: min(56vh, 500px); overflow-y: auto; }
+.nt-cmd {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  margin-bottom: 8px; word-break: break-all;
+}
+/*
+ * The runnable command itself, separate from `.nt-cmd`'s plain summary
+ * lines ("host:port — 3 of 7 open") so a Copy button never shows up beside
+ * something there is nothing to run.
+ */
+.nt-cmdblock { margin-bottom: 8px; }
+.nt-cmdblock .nt-cmd { margin-bottom: 4px; white-space: pre-wrap; }
+.nt-cmd-note { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+.nt-pre {
+  font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap; word-break: break-word;
+  margin: 0; color: var(--text-dim);
+}
+.nt-group { margin-bottom: 13px; }
+.nt-group-head {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 5px;
+}
+.nt-rows { display: flex; flex-direction: column; gap: 2px; }
+.nt-mono { font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
+.nt-kv { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 4px 14px; font-size: 12px; }
+.nt-k { color: var(--muted); }
+.nt-v { font-family: var(--mono); font-size: 11.5px; word-break: break-word; }
+
+.nt-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 13px; }
+.nt-badge {
+  font-size: 10.5px; padding: 2px 7px; border-radius: 3px;
+  background: var(--panel-3); color: var(--text-dim); font-family: var(--mono);
+}
+.nt-badge.name { background: var(--accent-dim); color: #fff; }
+.nt-badge.ok { color: var(--green); }
+.nt-badge.warn { color: var(--amber); }
+.nt-badge.bad { color: var(--red); }
+
+/* Decoded certificates and tokens: a headline, then cards of tags and rows. */
+.nt-decoded { display: flex; flex-direction: column; gap: 10px; }
+.nt-headline { display: flex; flex-direction: column; gap: 6px; padding-bottom: 2px; }
+.nt-headline-text { font-size: 14px; font-weight: 600; color: var(--text); word-break: break-word; }
+.nt-card {
+  background: var(--panel-2); border: 1px solid var(--border-soft, var(--border));
+  border-radius: var(--radius); padding: 9px 11px;
+}
+.nt-card .nt-group-head { margin-bottom: 7px; }
+.nt-card .nt-kv { grid-template-columns: 150px minmax(0, 1fr); gap: 6px 14px; align-items: baseline; }
+.nt-v-node { font-family: inherit; font-size: 12px; }
+.nt-picked { flex: 1 1 100%; display: flex; align-items: baseline; gap: 8px; min-width: 0; margin-top: -4px; }
+.nt-picked[hidden] { display: none; }
+.nt-picked-label { font-size: 11px; color: var(--muted); }
+.nt-picked-path {
+  min-width: 0; padding: 0; border: 0; background: none; cursor: pointer;
+  font-family: var(--mono); font-size: 12px; color: var(--accent); text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nt-picked-path:hover { text-decoration: underline; }
+.nt-file { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.nt-file-path {
+  flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nt-tags { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.nt-tag {
+  font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: 10px;
+  background: var(--panel-3); color: var(--text-dim); max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nt-tag.role { color: var(--accent); }
+.nt-tag.perm { color: var(--green); }
+.nt-more {
+  background: none; border: 0; padding: 2px 4px; font-size: 11px;
+  color: var(--accent); cursor: pointer;
+}
+.nt-more:hover { text-decoration: underline; }
+.nt-dim { color: var(--muted); font-size: 11px; }
+.nt-problem { color: var(--red); font-size: 12px; }
+.nt-viewbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.nt-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.nt-seg-btn {
+  background: none; border: 0; padding: 3px 11px; font-size: 11.5px;
+  color: var(--text-dim); cursor: pointer;
+}
+.nt-seg-btn + .nt-seg-btn { border-left: 1px solid var(--border); }
+.nt-seg-btn.active { background: var(--accent-dim); color: #fff; }
+.nt-rawview .nt-pre {
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 9px 11px; white-space: pre; overflow-x: auto;
+}
+
+.nt-ports { display: grid; grid-template-columns: repeat(auto-fill, minmax(172px, 1fr)); gap: 5px; }
+.nt-port {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 5px 8px; border-radius: var(--radius);
+  background: var(--panel-2); border-left: 2px solid var(--muted);
+  font-size: 11.5px;
+  /* Without this a long error code widens the track and the grid scrolls. */
+  min-width: 0; overflow: hidden;
+}
+.nt-port.open { border-left-color: var(--green); }
+.nt-port.closed { border-left-color: var(--red); }
+.nt-port.filtered { border-left-color: var(--amber); }
+.nt-port-num { font-family: var(--mono); font-weight: 600; flex: none; }
+.nt-port-state { color: var(--text-dim); flex: none; }
+.nt-port-ms { margin-left: auto; font-size: 10px; color: var(--muted); flex: none; }
+.nt-port-detail {
+  font-size: 10px; color: var(--muted);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.nt-sock-grid {
+  display: grid; grid-template-columns: 52px 1fr 90px 1fr minmax(0, 140px);
+  gap: 2px 10px; font-size: 11.5px; align-items: baseline;
+}
+.nt-sock-head {
+  font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
+  padding-bottom: 3px; border-bottom: 1px solid var(--border-soft);
+}
+.nt-sock-row > div {
+  padding: 2px 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono);
+}
+.nt-sock-row.listen .nt-sock-state { color: var(--blue, var(--text-dim)); }
+.nt-sock-row.estab .nt-sock-state { color: var(--green); }
+
+.nt-raw { margin-top: 6px; }
+.nt-raw > summary {
+  cursor: pointer; list-style: none; font-size: 11px; color: var(--muted);
+  display: flex; align-items: center; gap: 6px; padding: 3px 0;
+}
+.nt-raw > summary::-webkit-details-marker { display: none; }
+.nt-raw > summary::before { content: '▸'; font-size: 9px; display: inline-block; transition: transform .12s; }
+.nt-raw[open] > summary::before { transform: rotate(90deg); }
+.nt-raw > summary:hover { color: var(--text-dim); }
+.nt-raw .nt-pre {
+  margin-top: 5px; background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px 10px; max-height: 260px; overflow-y: auto;
+}
+
+.chip-x {
+  background: none; border: 0; padding: 0 0 0 3px;
+  color: inherit; opacity: .65; font-size: 12px; line-height: 1;
+}
+.chip-x:hover { opacity: 1; }
+
+.tagb-table { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 5px 12px; align-items: center; font-size: 12px; }
+.tagb-k { color: var(--muted); font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
+.tagb-k.internal { opacity: .55; }
+.tagb-v { font-family: var(--mono); font-size: 11.5px; word-break: break-word; }
+
+.sb-empty { padding: 14px 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+/*
+ * The hosts tab's first paint: nothing to show yet, so a little radar stands
+ * in for the real list, sweeping and pinging up blips the way the hosts
+ * themselves will shortly appear. Pure CSS, so it costs nothing idle and
+ * stops the moment real inventory replaces it.
+ */
+.sb-scanning { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 12px 20px; }
+.sb-radar {
+  position: relative; width: 54px; height: 54px; border-radius: 50%;
+  background: var(--panel-2); border: 1px solid var(--border-soft); overflow: hidden;
+}
+.sb-radar::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background-image:
+    radial-gradient(circle, transparent 0, transparent 11px, var(--border-soft) 11px, var(--border-soft) 12px, transparent 12px),
+    radial-gradient(circle, transparent 0, transparent 24px, var(--border-soft) 24px, var(--border-soft) 25px, transparent 25px);
+}
+.sb-radar-sweep {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, var(--accent) 0deg, transparent 70deg, transparent 360deg);
+  opacity: .6;
+  animation: sb-radar-spin 1.8s linear infinite;
+}
+@keyframes sb-radar-spin { to { transform: rotate(360deg); } }
+.sb-radar-blip {
+  position: absolute; width: 5px; height: 5px; margin: -2.5px; border-radius: 50%;
+  background: var(--accent); opacity: 0;
+  animation: sb-radar-blip 2.6s ease-in-out infinite;
+}
+.sb-radar-blip.b1 { top: 16px; left: 36px; animation-delay: 0s; }
+.sb-radar-blip.b2 { top: 36px; left: 16px; animation-delay: .9s; }
+.sb-radar-blip.b3 { top: 20px; left: 20px; animation-delay: 1.7s; }
+@keyframes sb-radar-blip {
+  0%, 100% { opacity: 0; transform: scale(.5); }
+  12% { opacity: 1; transform: scale(1.3); }
+  30% { opacity: .8; transform: scale(1); }
+  55% { opacity: 0; transform: scale(1); }
+}
+.sb-scanning-text { color: var(--muted); font-size: 12px; }
+
+/*
+ * The "Session expired" block belongs to the cluster above it, and has to
+ * look like it does. A host row is indented 20px with a 2px edge; this
+ * matches that and carries the same hairline rail the contents of a folder
+ * get, so the block reads as this cluster's contents rather than as a
+ * notice about the app that happens to be nearby.
+ */
+.sb-empty.sb-expired {
+  position: relative;
+  margin: 2px 0 4px;
+  padding: 10px 12px 11px 26px;
+}
+.sb-empty.sb-expired::before {
+  content: '';
+  position: absolute; left: 16px; top: 0; bottom: 0;
+  width: 1px; background: var(--border-soft);
+}
+.sb-expired-line { color: var(--text-dim); }
+
+.sb-foot {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 9px; border-top: 1px solid var(--border-soft);
+}
+.badge { font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge.ok { color: var(--green); }
+.badge.warn { color: var(--amber); }
+.badge.err { color: var(--red); }
+
+.ghost-btn {
+  padding: 4px 10px; border: 1px solid var(--border);
+  background: var(--panel-2); color: var(--text-dim); border-radius: var(--radius); font-size: 11.5px;
+}
+.ghost-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--muted); }
+.ghost-btn.sm { padding: 2px 7px; font-size: 11px; }
+.ghost-btn.active { background: var(--accent-dim); border-color: var(--accent-dim); color: #fff; }
+.primary-btn {
+  padding: 6px 14px; border: 1px solid var(--accent);
+  background: var(--accent); color: #fff; border-radius: var(--radius); font-weight: 500;
+}
+/* `sm` existed for ghost and icon buttons only, so a primary button beside a
+   small ghost one in the same row came out a size larger. */
+.primary-btn.sm { padding: 2px 9px; font-size: 11px; }
+.primary-btn:hover { background: color-mix(in srgb, var(--accent) 85%, white); }
+.danger-btn { border-color: var(--red); background: transparent; color: var(--red); }
+.danger-btn:hover { background: rgba(248,81,73,.12); }
+
+#main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#workspace { flex: 1; display: flex; min-height: 0; }
+
+/* ---------------- Per-pane file explorer ---------------- */
+
+/* A pane is head + body; the body holds the explorer and the terminal. */
+.pane-body { flex: 1; display: flex; min-width: 0; min-height: 0; }
+.pane-body.stacked { flex-direction: column; }
+
+.pane-files {
+  /*
+   * 270px by default, narrow enough that two panes side by side still leave
+   * usable terminals — but the ceiling used to be 42%, which in a split
+   * pane could land below the ~330-400px the toolbar's own icon buttons
+   * need (18 of them at 22px each), with no scroll or wrap to reach the
+   * ones past the edge — "show hidden files" among them. Dragging wider
+   * is how that gets fixed in the moment; the ceiling just has to allow it.
+   */
+  width: 270px; min-width: 160px; max-width: 70%;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--panel); border-right: 1px solid var(--border);
+  /*
+   * Never shrink to fit the terminal beside it.
+   *
+   * A flex item shrinks when the row overflows, and for the moment between
+   * the explorer appearing and the terminal re-fitting, the row *does*
+   * overflow: the xterm is still as wide as it was when it had the pane to
+   * itself. The explorer was the only item that could give, so it collapsed
+   * to its 160px minimum — and stayed there, because nothing puts a
+   * squeezed panel back. The terminal absorbs that moment instead; it is
+   * about to be re-measured anyway.
+   */
+  flex: none;
+}
+.pane-body.stacked > .pane-files {
+  width: auto; max-width: none;
+  height: 240px; min-height: 100px; max-width: none;
+  border-right: 0; border-bottom: 1px solid var(--border);
+}
+.pane-files.hidden { display: none !important; }
+
+/* Two explorers stacked in one pane: session files above, local below. */
+.pane-files > .fpane { flex: 1 1 0; min-height: 90px; }
+.files-split {
+  height: 4px; flex-shrink: 0; cursor: row-resize;
+  background: var(--border); 
+}
+.files-split:hover, .files-split.dragging { background: var(--accent-dim); }
+
+/* Divider between the explorer and its terminal. */
+.pane-split-h { width: 4px; cursor: col-resize; flex-shrink: 0; background: transparent; }
+.pane-split-h:hover, .pane-split-h.dragging { background: var(--accent-dim); }
+.pane-body.stacked > .pane-split-h { width: auto; height: 4px; cursor: row-resize; }
+.pane-split-h.hidden { display: none !important; }
+
+.fpane { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+
+.fpane-head {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 5px; border-bottom: 1px solid var(--border-soft);
+  background: var(--panel-2);
+  overflow: hidden;
+}
+/* The source name yields space so the buttons always fit. */
+.fpane-head > .pane-source { flex: 1 1 auto; min-width: 44px; }
+.fpane-actions { flex: 0 0 auto; }
+.fpane-title { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.fpane-actions { margin-left: auto; display: flex; gap: 1px; }
+
+.pathbar { padding: 4px 6px; border-bottom: 1px solid var(--border-soft); }
+.pathbar input {
+  width: 100%; padding: 3px 7px; font-family: var(--mono); font-size: 11.5px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px; outline: none;
+}
+.pathbar input:focus { border-color: var(--accent-dim); }
+
+/* ---------------------------------------------------------------
+   Guided tour. The spotlight is one element with an enormous spread
+   box-shadow, so everything outside it dims without a second layer
+   to keep in sync or a mask to worry about support for.
+   --------------------------------------------------------------- */
+.tour-root { position: fixed; inset: 0; z-index: 90; }
+/* Clicks land on the app, not the tour — except on the card itself. */
+.tour-root, .tour-ring { pointer-events: none; }
+.tour-root.centred { background: rgba(0, 0, 0, .55); }
+.tour-ring {
+  position: fixed; border-radius: 7px;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .55), 0 0 14px 2px var(--accent-dim);
+  transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease;
+}
+/* The spotlight sliding between targets is decoration, not information. */
+@media (prefers-reduced-motion: reduce) {
+  .tour-ring { transition: none; }
+}
+.tour-card {
+  position: fixed; pointer-events: auto; width: min(400px, 92vw);
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .5);
+  padding: 14px 16px 12px;
+}
+/* Centred when the step has no anchor to point at. */
+.tour-root.centred .tour-card {
+  left: 50%; top: 50%; transform: translate(-50%, -50%);
+}
+.tour-card h3 { margin: 2px 0 8px; font-size: 15px; }
+.tour-card p { margin: 0 0 8px; font-size: 12.5px; line-height: 1.5; color: var(--text-dim); }
+.tour-card p:last-of-type { margin-bottom: 10px; }
+.tour-step {
+  font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600;
+}
+.tour-dots { display: flex; gap: 5px; flex-wrap: wrap; margin: 0 0 11px; }
+.tour-dot {
+  width: 7px; height: 7px; padding: 0; border-radius: 50%; cursor: pointer;
+  border: 0; background: var(--panel-3);
+}
+.tour-dot.on { background: var(--accent); }
+.tour-dot:hover { background: var(--accent-dim); }
+.tour-actions { display: flex; align-items: center; gap: 7px; }
+
+/*
+ * The name filter, directly under the path it applies to. Tinted rather than
+ * plain so a filter still in force is obvious at a glance — the list being
+ * short is otherwise indistinguishable from the directory being small.
+ */
+.filterbar {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 6px; border-bottom: 1px solid var(--border-soft);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.filterbar input {
+  flex: 1; min-width: 0; padding: 3px 7px; font-family: var(--mono); font-size: 11.5px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px; outline: none;
+}
+.filterbar input:focus { border-color: var(--accent); }
+
+.flist { flex: 1; overflow-y: auto; outline: none; }
+/*
+ * The whole pane is the drop target, so the whole pane says so. The outline
+ * sits on the pane rather than the list because a drag aimed at the toolbar or
+ * the empty space below a short listing is a drop too.
+ */
+.fpane.dragover { box-shadow: inset 0 0 0 2px var(--accent-dim); }
+.fpane.dragover .flist { background: rgba(76,141,255,.09); }
+
+.frow {
+  display: flex; align-items: center; gap: 7px;
+  padding: 3px 8px; font-size: 12px; cursor: default;
+  border-left: 2px solid transparent; white-space: nowrap;
+}
+/*
+ * The column strip above the list.
+ *
+ * Tiny on purpose — it is a label, not a toolbar — and it wears the same
+ * cell classes as the rows, so the widths, the shrink order and the widths
+ * at which a narrow pane drops a column are defined once and cannot drift
+ * apart. Sticky, because a sort is worth changing after you have scrolled.
+ */
+.fhead {
+  display: flex; align-items: center; gap: 7px;
+  padding: 2px 8px 3px; border-left: 2px solid transparent;
+  font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--muted); white-space: nowrap; user-select: none;
+  border-bottom: 1px solid var(--border-soft); background: var(--panel);
+}
+.fhead .sortable { cursor: pointer; }
+.fhead .sortable:hover { color: var(--text); }
+/* The column in force is the one you are reading the list by. */
+.fhead .on { color: var(--text); }
+.fhead .fname, .fhead .fperm, .fhead .fown, .fhead .fsize, .fhead .fdate {
+  font-family: inherit; font-size: 9.5px;
+}
+.fhead .hidden { display: none; }
+/*
+ * A twisty and an icon are a column too. They had no width at all, so a
+ * file's name started a few pixels left of a folder's and the list was
+ * quietly ragged — invisible until something above it claimed to be a
+ * column header.
+ */
+.frow .ftwisty, .fhead .ftwisty { width: 10px; flex: none; text-align: center; }
+.frow .ficon, .fhead .ficon { width: 15px; flex: none; text-align: center; }
+
+.frow:hover { background: var(--panel-2); }
+.frow.selected { background: var(--accent-dim); color: #fff; }
+/*
+ * The name is what the list is for, so it gets a floor before it starts
+ * clipping; the size and date give up their space first and then hide
+ * entirely, rather than squeezing every name into an ellipsis.
+ */
+.frow .fname, .fhead .fname { flex: 1 1 auto; min-width: 132px; overflow: hidden; text-overflow: ellipsis; }
+.frow .fsize, .fhead .fsize {
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  width: 58px; text-align: right; flex: 0 1 auto; overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+/*
+ * `pre` because fmtDate pads the day and the year form to a fixed twelve
+ * characters, and a collapsing white-space rule threw that padding away — which
+ * is why the columns never lined up.
+ */
+.frow .fdate, .fhead .fdate {
+  /*
+   * 78px, not 86. fmtDate is twelve characters at their widest — `Sep 19
+   * 12:25` — which is about 76px of this mono at this size, so the old width
+   * was reserving a character and a half of nothing. That slack came out of
+   * the pane width at which a date can be shown at all.
+   */
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  width: 78px; text-align: left; flex: none;
+  white-space: pre; font-variant-numeric: tabular-nums;
+}
+/*
+ * The details columns. Fixed widths and tabular figures so a mode string reads
+ * as a column rather than as ragged text, and both give up their space before
+ * the name does — the same bargain the size and date already make. The owner
+ * is allowed to clip, since a long account name is still recognisable from its
+ * first few characters.
+ */
+.frow .fperm, .fhead .fperm {
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  width: 78px; flex: none; white-space: pre; letter-spacing: -.2px;
+}
+.frow .fown, .fhead .fown {
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  width: 96px; flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.frow.selected .fsize, .frow.selected .fdate,
+.frow.selected .fperm, .frow.selected .fown { color: rgba(255,255,255,.8); }
+
+/*
+ * A comparison, marked on the rows themselves.
+ *
+ * The colour carries the verdict and the glyph names it, because "which of
+ * these two is ahead" is read by sweeping the list rather than by looking
+ * anything up: a left edge you can see from the other pane, and a single
+ * character that says which way. Identical rows are left completely alone —
+ * most of a compared directory is identical, and colouring that too would
+ * drown the differences.
+ */
+.frow .fcmp {
+  width: 14px; flex: none; text-align: center;
+  font-size: 11px; font-family: var(--mono);
+}
+.frow.cmp-newer { border-left-color: var(--green); }
+.frow.cmp-newer .fcmp { color: var(--green); }
+.frow.cmp-older { border-left-color: var(--accent); }
+.frow.cmp-older .fcmp { color: var(--accent); }
+.frow.cmp-only { border-left-color: var(--amber); }
+.frow.cmp-only .fcmp { color: var(--amber); }
+.frow.cmp-differs { border-left-color: var(--purple); }
+.frow.cmp-differs .fcmp { color: var(--purple); }
+.frow.selected .fcmp { color: rgba(255,255,255,.85); }
+
+/*
+ * A flagged recording: the star is the control and the left edge is the
+ * signal, so a flagged session is findable by sweeping the list rather than
+ * by reading every row.
+ */
+.picker-item.flagged { border-left: 2px solid var(--amber); }
+.icon-btn.flagbtn { color: var(--muted); font-size: 14px; line-height: 1; }
+.icon-btn.flagbtn.on { color: var(--amber); }
+.picker-item .session-note {
+  margin-top: 3px; color: var(--text-dim); font-family: inherit;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/*
+ * Quick connect's advice block: what to do about a failure whose message does
+ * not say. Bordered in amber because it is a diagnosis, not an error — the
+ * error is in the output above it.
+ */
+.qc-advice {
+  margin-top: 10px; padding: 11px 12px;
+  background: var(--panel-2); border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--amber); border-radius: var(--radius);
+}
+.qc-advice.hidden { display: none; }
+.qc-advice-head { font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
+.qc-advice code {
+  font-family: var(--mono); font-size: 11px;
+  background: var(--bg); padding: 1px 4px; border-radius: 3px;
+}
+.qc-debug {
+  margin: 10px 0 0; padding: 9px 10px; max-height: 260px; overflow: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-word;
+}
+
+/* The sync preview: one reviewable line per action. */
+.sync-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 10px; border-bottom: 1px solid var(--border-soft);
+  font-size: 12px; white-space: nowrap;
+}
+.sync-row:last-child { border-bottom: 0; }
+.sync-row .sync-op { width: 14px; text-align: center; font-family: var(--mono); color: var(--accent); }
+.sync-row .sync-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+.sync-row .sync-why { flex: 0 1 auto; min-width: 0; font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+/* Overwriting something newer than the copy replacing it. */
+.sync-row.risky { background: rgba(210,153,34,.10); }
+.sync-row.risky .sync-why { color: var(--amber); }
+.frow.dir .fname { color: var(--accent); font-weight: 500; }
+.frow.selected.dir .fname { color: #fff; }
+.frow.link .fname { color: var(--purple); font-style: italic; }
+.frow.broken .fname { color: var(--red); text-decoration: line-through; }
+
+.fpane-status {
+  padding: 3px 8px; border-top: 1px solid var(--border-soft);
+  font-size: 10.5px; color: var(--muted);
+  display: flex; gap: 8px; align-items: center;
+  white-space: nowrap; overflow: hidden;
+}
+.fpane-status .err { color: var(--red); }
+/* Free space on the volume, first in the footer: amber under 20%, red under 10%. */
+.fpane-status .disk.warn { color: var(--amber); font-weight: 600; }
+.fpane-status .disk.danger { color: var(--red); font-weight: 600; }
+
+/* Narrow explorers shed the least-used chrome before anything clips. */
+.pane-files { container-type: inline-size; }
+@container (max-width: 300px) {
+  .fpane-actions [data-opt="nav"] { display: none; }
+}
+/*
+ * The details columns go before anything else: they are the extra view, and a
+ * narrow pane cannot carry 174px of them and a readable name.
+ */
+@container (max-width: 430px) {
+  .frow .fown, .fhead .fown { display: none; }
+}
+@container (max-width: 360px) {
+  .frow .fperm, .fhead .fperm { display: none; }
+}
+/*
+ * Below this the row tightens rather than dropping anything.
+ *
+ * The date is the column people actually came for — "which of these is the
+ * one I just wrote" — so it is worth cramping its neighbours to keep. The
+ * gap, the size column and the name's floor each give up a little, which
+ * together buy about 50px of pane: enough that a date survives in a pane
+ * where it used to vanish. Wide panes are untouched; there is nothing to buy
+ * there.
+ */
+@container (max-width: 360px) {
+  .frow, .fhead { gap: 5px; }
+  .frow .fname, .fhead .fname { min-width: 96px; }
+  .frow .fsize, .fhead .fsize { width: 50px; }
+}
+/*
+ * And the floor where it finally goes.
+ *
+ * With the tightening above, a row needs roughly 16px of padding, 2px of
+ * border, ~26px of twisty and icon, 20px of gaps, 50px of size, 78px of date
+ * and a 96px name — about 288px. Hiding it at 285 means the column is dropped
+ * at the width where it stops fitting, rather than 18px *after* it has
+ * already been pushed off the end of the row, which is what the old 330
+ * against the old widths actually did.
+ */
+@container (max-width: 285px) {
+  .frow .fdate, .fhead .fdate { display: none; }
+}
+@container (max-width: 250px) {
+  .fpane-actions [data-opt="extra"] { display: none; }
+}
+@container (max-width: 215px) {
+  .frow .fsize, .fhead .fsize { display: none; }
+}
+
+/* ---------------- Terminals ---------------- */
+#terminals { flex: 1; position: relative; min-width: 0; background: var(--bg); }
+.panes { position: absolute; inset: 0; display: flex; }
+.panes.hidden { display: none; }
+
+.pane-split { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.pane-split.row { flex-direction: row; }
+.pane-split.col { flex-direction: column; }
+
+.pane {
+  flex: 1; min-width: 0; min-height: 0; position: relative;
+  border: 1px solid transparent; display: flex; flex-direction: column;
+}
+.pane.focused { border-color: var(--accent-dim); }
+.pane-head {
+  display: flex; align-items: center; gap: 6px;
+  height: 22px; padding: 0 7px; flex-shrink: 0;
+  background: var(--panel); border-bottom: 1px solid var(--border-soft);
+  font-size: 10.5px; color: var(--muted);
+}
+.pane.focused .pane-head { background: var(--panel-2); color: var(--text-dim); }
+.pane-head .pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-head .pclose { margin-left: auto; }
+/*
+ * The one button on this bar that is not an icon — it needs to be read, not
+ * recognised, the moment a session has ended. Amber rather than the plain
+ * accent: this is "something stopped", the same note the stale/gone tags use.
+ */
+.pane-head .preconnect {
+  flex: none; border: 1px solid var(--amber); border-radius: 4px;
+  background: color-mix(in srgb, var(--amber) 14%, transparent);
+  color: var(--amber); font-size: 10px; font-weight: 600;
+  padding: 1px 7px; line-height: 16px; cursor: pointer;
+}
+.pane-head .preconnect:hover { background: color-mix(in srgb, var(--amber) 26%, transparent); }
+/*
+ * `min-width: 0` so the terminal can be narrowed at all — a flex item's
+ * floor is its content, and an xterm that has not been re-measured yet is
+ * as wide as it used to be. `overflow: hidden` so that stale width cannot
+ * push its neighbour around in the moment before the fit runs.
+ */
+.pane-term { flex: 1 1 0; min-width: 0; min-height: 0; overflow: hidden; padding: 3px 0 0 5px; }
+.pane-term .xterm { height: 100%; }
+/*
+ * Live stats for the host, under a server session (monitor.js). One quiet
+ * line: the numbers in the text colour, their names muted, and amber or red
+ * only for what is running high.
+ */
+.pane-stats {
+  flex-shrink: 0; display: flex; align-items: center; gap: 14px; overflow: hidden;
+  height: 20px; padding: 0 9px; border-top: 1px solid var(--border-soft);
+  background: var(--panel); font-size: 10.5px; font-family: var(--mono); white-space: nowrap;
+}
+.pane-stats .ps-cell { display: inline-flex; gap: 5px; }
+.pane-stats .ps-k { color: var(--muted); }
+.pane-stats .ps-v { color: var(--text-dim); }
+.pane-stats .warn .ps-v, .pane-stats .ps-spark.warn { color: var(--amber); }
+.pane-stats .bad .ps-v, .pane-stats .ps-spark.bad { color: var(--red); }
+.pane-stats .ps-spark { color: var(--accent); letter-spacing: -1px; }
+.pane-stats .ps-note { color: var(--muted); font-family: var(--sans, system-ui); overflow: hidden; text-overflow: ellipsis; }
+.pane-stats .ps-retry { border: 0; background: transparent; color: var(--accent); cursor: pointer; font: inherit; padding: 0 2px; }
+.pane.files-only .pane-stats { display: none; }
+
+/*
+ * A pane showing a screen rather than a terminal. It fills the same space a
+ * terminal would, and noVNC puts its canvas inside — centred, because a
+ * desktop that does not match the pane's shape leaves a margin somewhere and
+ * a margin on one side looks like a bug.
+ */
+.pane-screen { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #000; }
+.pane-screen .vnc-screen { width: 100%; height: 100%; }
+.pane-screen canvas { outline: none; }
+.vnc-note {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; width: 100%; height: 100%; color: var(--text-dim); background: var(--bg);
+}
+.vnc-note .vnc-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.vnc-note .vnc-sub { font-size: 12px; }
+
+.pane-overlay {
+  position: absolute; inset: 0; z-index: 5;
+  background: var(--bg); opacity: .97;
+  display: flex; align-items: center; justify-content: center;
+}
+.pane-overlay .box { width: min(560px, 88%); }
+.pane-overlay h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+.pane-overlay .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+.pane-overlay pre {
+  max-height: 210px; overflow: auto; margin: 0 0 12px;
+  padding: 9px 11px; background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: var(--radius); font-family: var(--mono); font-size: 11px;
+  color: var(--text-dim); white-space: pre-wrap; word-break: break-word;
+}
+.pane-overlay .row { display: flex; gap: 8px; align-items: center; }
+.pane-overlay input {
+  flex: 1; padding: 7px 10px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius); outline: none;
+  font-family: var(--mono);
+}
+.pane-overlay input:focus { border-color: var(--accent); }
+
+.empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.empty.hidden { display: none; }
+/* Wide enough for the four start buttons to sit on one row. */
+.empty-inner { text-align: center; max-width: 520px; }
+.empty-inner h1 { margin: 0 0 6px; font-size: 26px; font-weight: 300; letter-spacing: .02em; }
+.empty-inner p { margin: 0 0 18px; color: var(--muted); }
+.empty-actions { display: flex; gap: 9px; justify-content: center; margin-bottom: 22px; flex-wrap: wrap; }
+
+/* The start page's four ways in: icon over label, all the same size. */
+.big-btn {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 7px;
+  min-width: 104px; padding: 13px 14px 11px;
+  border-radius: 9px; font-size: 12px; line-height: 1;
+}
+.big-btn svg {
+  width: 22px; height: 22px;
+  fill: none; stroke: currentColor; stroke-width: 1.4;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.big-btn:hover svg { opacity: 1; }
+.big-btn svg { opacity: .85; transition: opacity .12s; }
+.empty-hints { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 7px 16px; justify-content: center; color: var(--muted); font-size: 11.5px; }
+.empty-hints b { color: var(--text-dim); font-family: var(--mono); font-weight: 500; }
+
+/* ---------------- Dock ---------------- */
+/*
+ * A share of the window, not a fixed slab.
+ *
+ * 230px was a third of a laptop screen and a sliver of a monitor — the same
+ * number meaning two different things. The dock is a status area: transfers
+ * running, a fan-out's results, the log. It should be glanceable without
+ * taking the terminal's room, and it is draggable for the times it is the
+ * thing being read. The floor keeps two or three rows legible on a short
+ * screen; the ceiling stops it eating the session on a tall one.
+ */
+#dock {
+  height: 15vh; min-height: 108px; max-height: 40vh;
+  display: flex; flex-direction: column;
+  background: var(--panel); border-top: 1px solid var(--border);
+}
+.dock-head {
+  display: flex; align-items: center;
+  border-bottom: 1px solid var(--border-soft); padding-right: 7px;
+}
+.dock-tabs { display: flex; }
+.dock-tab {
+  padding: 7px 13px; border: 0; background: transparent; color: var(--muted);
+  font-size: 11.5px; border-bottom: 2px solid transparent;
+}
+.dock-tab:hover { color: var(--text); }
+.dock-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.dock-actions { margin-left: auto; display: flex; gap: 5px; align-items: center; }
+.dock-panel { flex: 1; overflow-y: auto; padding: 8px 10px; }
+.dock-panel.hidden { display: none; }
+
+.xfer-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 0; border-bottom: 1px solid var(--border-soft); font-size: 12px;
+}
+.xfer-row .xlabel { flex: 1; min-width: 0; }
+.xfer-row .xlabel .main { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xfer-row .xlabel .sub { color: var(--muted); font-size: 10.5px; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xbar { width: 180px; height: 5px; background: var(--panel-3); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+.xbar > i { display: block; height: 100%; background: var(--accent); transition: width .18s; }
+.xfer-row.done .xbar > i { background: var(--green); }
+.xfer-row.error .xbar > i { background: var(--red); }
+.xfer-row.cancelled .xbar > i { background: var(--muted); }
+.xpct { width: 78px; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--muted); flex-shrink: 0; }
+/* All the bytes are across; the bar is full while the file is closed out. */
+.xpct.waiting { color: var(--accent); }
+.xfer-row.running .xbar > i.full { animation: xfer-finishing 1.1s ease-in-out infinite; }
+@keyframes xfer-finishing { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+/*
+ * A download row. Borrows the transfer row's label block — same shape, same
+ * two lines of grey detail — and adds the local path underneath, since that is
+ * the fact the list exists to record. The buttons stay put as the panel
+ * narrows; it is the path that gives up its width.
+ */
+.dl-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 0; border-bottom: 1px solid var(--border-soft); font-size: 12px;
+}
+.dl-row .xlabel { flex: 1; min-width: 0; }
+.dl-row .xlabel .main { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-row .xlabel .sub {
+  color: var(--muted); font-size: 10.5px; font-family: var(--mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dl-row .xlabel .sub.path { opacity: .72; direction: rtl; text-align: left; }
+.dl-row button { flex: none; }
+/* Still listed, no longer there: readable, but plainly not actionable. */
+.dl-row.gone .xlabel .main { color: var(--amber); }
+.dl-row.gone { opacity: .72; }
+
+.mx-form { display: flex; gap: 7px; margin-bottom: 9px; align-items: stretch; }
+.mx-form input {
+  flex: 1; padding: 6px 10px; font-family: var(--mono);
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); outline: none;
+}
+.mx-form input:focus { border-color: var(--accent); }
+.mx-targets { font-size: 11px; color: var(--muted); margin-bottom: 9px; }
+.mx-result { border: 1px solid var(--border-soft); border-radius: var(--radius); margin-bottom: 7px; overflow: hidden; }
+.mx-rhead {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 9px; background: var(--panel-2); font-size: 11.5px; cursor: pointer;
+}
+.mx-rhead .st { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.mx-rhead .st.done { background: var(--green); }
+.mx-rhead .st.running { background: var(--amber); animation: pulse 1.2s infinite; }
+.mx-rhead .st.prompting { background: var(--accent); animation: pulse 1.2s infinite; }
+.mx-rhead .st.error, .mx-rhead .st.timeout { background: var(--red); }
+.mx-rhead .mxname { flex: 1; font-weight: 500; color: var(--text); }
+.mx-rhead .mxmeta { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.mx-prompt { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.mx-prompt input { flex: 1; max-width: 260px; }
+.mx-rbody {
+  padding: 7px 10px; font-family: var(--mono); font-size: 11px;
+  white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto;
+  background: var(--panel-2); color: var(--text-dim);
+}
+.mx-rbody .stderr { color: var(--red); }
+.mx-result.collapsed .mx-rbody { display: none; }
+
+.log-line {
+  font-family: var(--mono); font-size: 18px; white-space: pre-wrap; word-break: break-word;
+  color: var(--text-dim); background: var(--panel-3); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 14px; margin-bottom: 8px;
+}
+.log-line.sys { color: var(--accent); opacity: .75; }
+
+/* ---------------- Status bar ---------------- */
+#statusbar {
+  display: flex; align-items: center; gap: 12px;
+  height: 22px; padding: 0 11px; flex-shrink: 0;
+  background: var(--panel); border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
+}
+.st-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#status-broadcast { color: var(--amber); font-weight: 600; letter-spacing: .05em; }
+
+/* A login in progress — the status bar is 22px of 11px text, too small to
+   ever be the thing that announces this, so it gets its own box instead:
+   fixed low on the right, above the toasts and the status bar both, large
+   enough to actually be seen. */
+#login-banner {
+  position: fixed; right: 16px; bottom: 44px; z-index: 250;
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 20px; max-width: 420px;
+  background: var(--panel-3); border: 1px solid var(--amber);
+  border-radius: var(--radius); box-shadow: 0 12px 32px rgba(0,0,0,.5);
+  font-size: 16px; font-weight: 600; color: var(--amber);
+  animation: slidein .16s ease-out;
+}
+#login-banner.hidden { display: none; }
+#login-banner .login-banner-spinner {
+  flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+  border: 3px solid var(--amber); border-top-color: transparent;
+  animation: sb-radar-spin .8s linear infinite;
+}
+
+/* ---------------- Modals ---------------- */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal {
+  width: min(680px, 92vw); max-height: 86vh;
+  display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 9px; box-shadow: 0 18px 60px rgba(0,0,0,.5);
+}
+.modal-head {
+  padding: 13px 16px; border-bottom: 1px solid var(--border-soft);
+  display: flex; align-items: center; gap: 9px;
+}
+.modal-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.modal-head .sub { color: var(--muted); font-size: 11.5px; }
+.modal-body { padding: 14px 16px; overflow-y: auto; flex: 1; }
+.modal-foot {
+  padding: 11px 16px; border-top: 1px solid var(--border-soft);
+  display: flex; gap: 8px; justify-content: flex-end; align-items: center;
+}
+
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+.field input, .field select, .field textarea {
+  width: 100%; padding: 7px 10px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); outline: none;
+}
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+.field textarea { resize: vertical; min-height: 58px; font-family: var(--mono); font-size: 12px; }
+.field .hint { font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+/*
+ * A field's name, set apart from its hint. Both were 11px in the same muted
+ * grey, so in a long dialog like Settings the name of a setting read as one
+ * more line of small print. The name is what you scan for; the hint is what
+ * you read once you have found it.
+ */
+.field > .field-label { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
+.field-row { display: flex; gap: 10px; }
+
+/*
+ * The local-automation panel is not prose under a field: it is a socket path, a
+ * token file and a command line to be transcribed exactly. The muted 10.5px
+ * hint treatment that suits a one-line note is too dim and too small for that —
+ * it measures under 4:1 against the dark panel, which is why it reads as washed
+ * out there — so this block gets a step up, and the paths get a real code box.
+ */
+.mcp-panel .hint { font-size: 11.5px; color: var(--text-dim); }
+.mcp-code {
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.6;
+  color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 7px 9px; margin-top: 8px;
+  white-space: pre-wrap; overflow-wrap: anywhere; user-select: text;
+}
+/*
+ * The label in front of a path. Dimmer than the path so the path is what the
+ * eye lands on, but not `--muted`: that is the treatment being fixed here.
+ */
+.mcp-code .k { color: var(--text-dim); user-select: none; }
+.field-row > .field { flex: 1; }
+.check { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; font-size: 12px; }
+.check input { accent-color: var(--accent); }
+/*
+ * A checkbox inside a field — Local automation, Delegate roles — is still a
+ * checkbox. `.field label` and `.field input` outrank `.check`, so it came out
+ * as a block of small grey text under a box stretched across the whole row,
+ * floating in the middle of it.
+ */
+.field label.check { display: flex; font-size: 12px; font-weight: 400; color: var(--text); margin-bottom: 9px; }
+.field .check input { width: auto; padding: 0; flex: none; }
+
+.picker-list { max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.picker-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 11px; cursor: pointer; border-bottom: 1px solid var(--border-soft);
+}
+.picker-item:last-child { border-bottom: 0; }
+.picker-item:hover, .picker-item.active { background: var(--panel-3); }
+.picker-item .pname { flex: 1; }
+.picker-item .pmeta { font-size: 10.5px; color: var(--muted); font-family: var(--mono); }
+
+.req-card { border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 9px; }
+.req-head { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
+.req-state { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600; letter-spacing: .04em; }
+.req-state.PENDING { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); }
+.req-state.APPROVED { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.req-state.DENIED { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
+.req-state.APPLIED { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.req-meta { font-size: 11px; color: var(--muted); font-family: var(--mono); line-height: 1.6; }
+.req-actions { display: flex; gap: 7px; margin-top: 9px; }
+
+.prof-row { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid var(--border-soft); border-radius: var(--radius); margin-bottom: 8px; }
+.prof-row.active { border-color: var(--accent-dim); background: rgba(76,141,255,.06); }
+.prof-info { flex: 1; min-width: 0; }
+.prof-info .pname { font-weight: 500; }
+.prof-info .pmeta { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.prof-info .pmeta.expired { color: var(--red); }
+
+/* ---------------- Toasts & context menu ---------------- */
+#toast-root { position: fixed; right: 14px; bottom: 34px; z-index: 200; display: flex; flex-direction: column; gap: 7px; align-items: flex-end; }
+.toast {
+  padding: 9px 13px; border-radius: var(--radius);
+  background: var(--panel-3); border: 1px solid var(--border);
+  font-size: 12px; max-width: 400px; box-shadow: 0 6px 22px rgba(0,0,0,.4);
+  white-space: pre-line; overflow-wrap: anywhere;
+  animation: slidein .16s ease-out;
+}
+.toast.error { border-color: var(--red); color: #ffb3ae; }
+.toast.success { border-color: var(--green); color: #97e0a3; }
+@keyframes slidein { from { opacity: 0; transform: translateX(14px); } }
+
+.ctxmenu {
+  position: fixed; z-index: 300; min-width: 186px; padding: 4px;
+  background: var(--panel-3); border: 1px solid var(--border);
+  border-radius: 7px; box-shadow: 0 10px 34px rgba(0,0,0,.5);
+  /*
+   * No taller than the window: a long list scrolls rather than running off
+   * the top. Submenus are position:fixed, so they are not clipped by this.
+   */
+  max-height: calc(100vh - 16px); overflow-y: auto; overflow-x: hidden;
+}
+.ctxmenu button {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 6px 10px; border: 0; background: transparent;
+  border-radius: 4px; text-align: left; font-size: 12px;
+}
+.ctxmenu button:hover { background: var(--accent-dim); color: #fff; }
+.ctxmenu button:disabled { opacity: .38; cursor: default; }
+.ctxmenu button:disabled:hover { background: transparent; color: inherit; }
+/*
+ * The icon gutter. Fixed width so every label in a panel starts at the same
+ * place, dimmed so the glyph marks the row without competing with its name —
+ * these are there to be swept past, not read.
+ */
+.ctxmenu .ctx-icon {
+  width: 15px; flex: none; text-align: center;
+  font-size: 11.5px; line-height: 1; color: var(--text-dim);
+}
+.ctxmenu button:hover .ctx-icon { color: rgba(255,255,255,.9); }
+.ctxmenu button.two-line .ctx-icon { margin-top: 2px; }
+.ctxmenu .sep { height: 1px; background: var(--border); margin: 4px 2px; }
+.ctxmenu .key { margin-left: auto; font-size: 10.5px; color: var(--muted); font-family: var(--mono); }
+.ctxmenu button:hover .key { color: rgba(255,255,255,.75); }
+/* An item with a second line: the name, and underneath what identifies it. */
+.ctxmenu button.two-line { align-items: flex-start; }
+.ctxmenu .ctx-lines { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ctxmenu .ctx-sub {
+  font-size: 10.5px; font-family: var(--mono); color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px;
+}
+.ctxmenu button:hover .ctx-sub { color: rgba(255,255,255,.72); }
+
+/* ---------------- Scrollbars ---------------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+/* Where two scrollbars meet: Chromium paints it white unless told otherwise. */
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: padding-box; }
+
+/* Second-pane source selector: which machine this pane is showing */
+.pane-source {
+  background: var(--panel-3); color: var(--text-dim);
+  border: 1px solid var(--border); border-radius: 4px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .03em;
+  padding: 2px 4px; outline: none;
+  min-width: 44px; text-overflow: ellipsis;
+}
+.pane-source:hover { color: var(--text); border-color: var(--muted); }
+.pane-source:focus { border-color: var(--accent); }
+
+/* Hosts the user has hidden, shown only when "show hidden hosts" is on */
+.sb-item.host-hidden { opacity: .45; }
+.sb-item.host-hidden .name { text-decoration: line-through; }
+
+/* ---------------- Idle orbit animation ----------------
+   Nodes circling a core while nothing is connected. It stops mattering the
+   moment a session opens, because the empty state is replaced wholesale. */
+
+.orbiter { display: flex; justify-content: center; margin-bottom: 10px; }
+.orbit-svg { width: 210px; height: 210px; overflow: visible; }
+
+.orbit-svg .ring {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 3 7;
+  opacity: .75;
+}
+.orbit-svg .ring-1 { animation: ring-spin 26s linear infinite; }
+.orbit-svg .ring-2 { animation: ring-spin 38s linear infinite reverse; }
+.orbit-svg .ring-3 { animation: ring-spin 52s linear infinite; }
+@keyframes ring-spin { to { transform: rotate(360deg); } }
+
+.orbit-svg .ring, .orbit-svg .spin { transform-origin: 120px 120px; }
+
+.orbit-svg .core rect { fill: var(--panel-3); stroke: var(--accent); stroke-width: 1.2; }
+.orbit-svg .core-glow { animation: core-pulse 3.2s ease-in-out infinite; transform-origin: 120px 120px; }
+@keyframes core-pulse {
+  0%, 100% { opacity: .55; transform: scale(.94); }
+  50%      { opacity: 1;   transform: scale(1.06); }
+}
+
+.orbit-svg .node rect { fill: var(--panel-2); stroke: var(--muted); stroke-width: 1; }
+.orbit-svg .led { fill: var(--green); animation: blink 1.7s ease-in-out infinite; }
+.orbit-svg .led-b { fill: var(--accent); animation-delay: .85s; }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .2; } }
+
+/* Counter-rotate the little servers so they stay upright while orbiting. */
+.orbit-svg .spin-1 { animation: ring-spin 14s linear infinite; }
+.orbit-svg .spin-2 { animation: ring-spin 22s linear infinite reverse; }
+.orbit-svg .spin-3 { animation: ring-spin 30s linear infinite; }
+.orbit-svg .spin-1 .node { animation: ring-spin 14s linear infinite reverse; }
+.orbit-svg .spin-2 .node { animation: ring-spin 22s linear infinite; }
+.orbit-svg .spin-3 .node { animation: ring-spin 30s linear infinite reverse; }
+.orbit-svg .node { transform-box: fill-box; transform-origin: center; }
+
+/* Packets running out from the core along each orbit. */
+.orbit-svg .packet { fill: var(--accent); }
+.orbit-svg .packet-1 { animation: packet-1 2.8s ease-in-out infinite; }
+.orbit-svg .packet-2 { animation: packet-2 3.6s ease-in-out infinite .6s; }
+.orbit-svg .packet-3 { animation: packet-3 4.4s ease-in-out infinite 1.2s; }
+@keyframes packet-1 {
+  0%   { transform: translate(120px,120px); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translate(120px,66px);  opacity: 0; }
+}
+@keyframes packet-2 {
+  0%   { transform: translate(120px,120px); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translate(198px,120px); opacity: 0; }
+}
+@keyframes packet-3 {
+  0%   { transform: translate(120px,120px); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translate(42px,120px);  opacity: 0; }
+}
+
+/* Tagline crossfade */
+.tagline {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  font-size: 13px; letter-spacing: .02em;
+}
+.tagline .tag-a, .tagline .tag-b { animation: tag-fade 6s ease-in-out infinite; }
+.tagline .tag-b { animation-delay: 3s; }
+.tagline .tag-sep { color: var(--border); }
+@keyframes tag-fade {
+  0%, 45%   { color: var(--accent); opacity: 1; }
+  50%, 95%  { color: var(--muted);  opacity: .55; }
+  100%      { color: var(--accent); opacity: 1; }
+}
+
+/* Respect a reduced-motion preference: keep the picture, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .orbit-svg *, .tagline * { animation: none !important; }
+}
+
+/* Side-by-side file panes: the panel becomes a wide row instead of a rail */
+#filepanel.columns {
+  flex-direction: row;
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 420px;
+  max-width: none;
+}
+#filepanel.columns > .fpane { flex: 1 1 0; min-width: 180px; border-right: 1px solid var(--border-soft); }
+#filepanel.columns > .fpane:last-child { border-right: 0; }
+/* The divider between panes runs vertically in this arrangement. */
+#filepanel.columns > #file-resizer {
+  height: auto; width: 4px; cursor: col-resize;
+}
+
+/* Hosts known to need per-session MFA */
+.sb-item .tag.mfa { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); font-weight: 600; }
+
+/* A direct SSH host that already runs a Teleport agent of its own */
+.sb-item .tag.teleport-detected { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
+
+/* ---------------- Scrollback search, in the pane header ---------------- */
+
+.pane-search {
+  display: flex; align-items: center; gap: 2px;
+  margin-right: 6px; flex-shrink: 0;
+}
+/* Make it read as terminal chrome rather than part of the pane title. */
+.pane-search::before {
+  content: '\2315';
+  font-size: 11px; color: var(--muted); margin-right: 3px;
+}
+.pane-search-input {
+  width: 110px; padding: 1px 6px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px;
+  font-size: 11px; line-height: 16px; outline: none;
+  transition: width .12s ease;
+}
+.pane-search-input::placeholder { color: var(--muted); }
+.pane-search-input:focus { border-color: var(--accent); }
+.pane-search.active .pane-search-input { width: 190px; }
+
+/* The count and the step buttons only matter once something is being searched. */
+.pane-search-count {
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  min-width: 34px; text-align: right;
+}
+.pane-search-count.none { color: var(--red); }
+.pane-search .icon-btn { opacity: 0; pointer-events: none; }
+.pane-search.active .icon-btn { opacity: 1; pointer-events: auto; }
+
+/* In a narrow pane the field shrinks rather than pushing the buttons out. */
+@media (max-width: 900px) {
+  .pane-search-input { width: 80px; }
+}
+
+/* Sidebar footer: buttons keep their own line rather than wrapping mid-label */
+.sb-foot .ghost-btn { white-space: nowrap; flex-shrink: 0; }
+.sb-foot { flex-wrap: nowrap; }
+.sb-foot .badge { min-width: 0; }
+
+/* Give the explorer's source name room before it truncates to nothing */
+.fpane-head > .pane-source { min-width: 76px; }
+
+/* Multi-exec "run as" field: narrow, beside the command */
+.mx-runas {
+  width: 130px; flex: 0 0 auto; padding: 6px 9px;
+  font-family: var(--mono); font-size: 12px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); outline: none;
+}
+.mx-runas:focus { border-color: var(--accent); }
+
+/* ---------------------------------------------------------------
+   Skins.
+
+   A skin repaints every token at once, so it sits after the theme and
+   accent rules and overrides both. `[data-skin]` on the root is the only
+   hook — nothing else in the stylesheet needs to know these exist.
+   --------------------------------------------------------------- */
+
+/* Neon party: saturated on near-black, the one that looks like a disco. */
+:root[data-skin="party"] {
+  --bg: #0b0616;
+  --panel: #150d26;
+  --panel-2: #1e1235;
+  --panel-3: #2a1a48;
+  --border: #3c2566;
+  --border-soft: #2a1a48;
+  --text: #f4e9ff;
+  --text-dim: #c9a8f0;
+  --muted: #8f6fb8;
+  --accent: #ff3ec8;
+  --accent-dim: #a3187c;
+  --green: #3dffc0;
+  --red: #ff4d6d;
+  --amber: #ffd23f;
+  --purple: #b388ff;
+  --scroll-thumb: #452a70;
+  --scroll-thumb-hover: #5d3a94;
+  color-scheme: dark;
+}
+
+/* Halloween: pumpkin on soot, with a sickly green for the warnings. */
+:root[data-skin="halloween"] {
+  --bg: #0d0a07;
+  --panel: #17110c;
+  --panel-2: #201811;
+  --panel-3: #2d2117;
+  --border: #40301f;
+  --border-soft: #2a1f14;
+  --text: #f6e7d3;
+  --text-dim: #d3a76a;
+  --muted: #8a6c47;
+  --accent: #ff7518;
+  --accent-dim: #a8460a;
+  --green: #7fff32;
+  --red: #e03a1f;
+  --amber: #ffb627;
+  --purple: #9d4edd;
+  --scroll-thumb: #3b2b1c;
+  --scroll-thumb-hover: #55402a;
+  color-scheme: dark;
+}
+
+/* Christmas: deep pine, holly red, a little gold. */
+:root[data-skin="christmas"] {
+  --bg: #07140d;
+  --panel: #0c1f15;
+  --panel-2: #12291c;
+  --panel-3: #1a3626;
+  --border: #245037;
+  --border-soft: #1a3626;
+  --text: #eef7f1;
+  --text-dim: #a8cdb6;
+  --muted: #6f9880;
+  --accent: #e63946;
+  --accent-dim: #9d2531;
+  --green: #57cc99;
+  --red: #ff5a5f;
+  --amber: #ffd166;
+  --purple: #c77dff;
+  --scroll-thumb: #21432f;
+  --scroll-thumb-hover: #2f5c42;
+  color-scheme: dark;
+}
+
+/* Winter: pale ice and silver, a light skin for the season. */
+:root[data-skin="winter"] {
+  --bg: #f7fafc;
+  --panel: #eaf1f6;
+  --panel-2: #dfe9f1;
+  --panel-3: #cfdeea;
+  --border: #b6cbdb;
+  --border-soft: #d4e2ec;
+  --text: #10222f;
+  --text-dim: #3d5a6f;
+  --muted: #6d879b;
+  --accent: #2e86c1;
+  --accent-dim: #90c5e3;
+  --green: #1a7f5a;
+  --red: #c0392b;
+  --amber: #a97400;
+  --purple: #6c5ce7;
+  --scroll-thumb: #bccfdd;
+  --scroll-thumb-hover: #a3bccf;
+  color-scheme: light;
+}
+
+/* Valentine: rose on plum. */
+:root[data-skin="valentine"] {
+  --bg: #16070f;
+  --panel: #230d19;
+  --panel-2: #2e1322;
+  --panel-3: #3d1b2d;
+  --border: #562740;
+  --border-soft: #3a1a2b;
+  --text: #ffeaf3;
+  --text-dim: #f0aac8;
+  --muted: #b2738f;
+  --accent: #ff4d8d;
+  --accent-dim: #a82558;
+  --green: #4dd4ac;
+  --red: #ff6b6b;
+  --amber: #ffc857;
+  --purple: #d291ff;
+  --scroll-thumb: #4d2438;
+  --scroll-thumb-hover: #6b3550;
+  color-scheme: dark;
+}
+
+/* St Patrick's: every green there is. */
+:root[data-skin="shamrock"] {
+  --bg: #04120a;
+  --panel: #081d10;
+  --panel-2: #0d2717;
+  --panel-3: #13351f;
+  --border: #1d4d2d;
+  --border-soft: #133520;
+  --text: #e8f8ec;
+  --text-dim: #9ed9ae;
+  --muted: #67997a;
+  --accent: #2ecc71;
+  --accent-dim: #1a7a43;
+  --green: #7bed9f;
+  --red: #ff6b6b;
+  --amber: #f9ca24;
+  --purple: #a29bfe;
+  --scroll-thumb: #1b4429;
+  --scroll-thumb-hover: #2a6340;
+  color-scheme: dark;
+}
+
+/* Fireworks: navy, white and a firecracker red. */
+:root[data-skin="fireworks"] {
+  --bg: #060b1c;
+  --panel: #0c1330;
+  --panel-2: #121b41;
+  --panel-3: #1a2655;
+  --border: #263673;
+  --border-soft: #1a2655;
+  --text: #eef2ff;
+  --text-dim: #a9b6e8;
+  --muted: #6d7bb0;
+  --accent: #ff3b3f;
+  --accent-dim: #a81f22;
+  --green: #4ade80;
+  --red: #ff5c5c;
+  --amber: #ffd166;
+  --purple: #8b9cff;
+  --scroll-thumb: #22305e;
+  --scroll-thumb-hover: #32447f;
+  color-scheme: dark;
+}
+
+/* Synthwave: the grid, the sunset, the chrome. */
+:root[data-skin="synthwave"] {
+  --bg: #120a24;
+  --panel: #1b1036;
+  --panel-2: #241547;
+  --panel-3: #311d5e;
+  --border: #452a80;
+  --border-soft: #2d1a57;
+  --text: #f2e9ff;
+  --text-dim: #b39cf5;
+  --muted: #7f6bbf;
+  --accent: #ff2e97;
+  --accent-dim: #a81361;
+  --green: #05ffa1;
+  --red: #ff5470;
+  --amber: #ffb800;
+  --purple: #b967ff;
+  --scroll-thumb: #3d2570;
+  --scroll-thumb-hover: #523397;
+  color-scheme: dark;
+}
+
+/* Matrix: one colour, and it is green. */
+:root[data-skin="matrix"] {
+  --bg: #000700;
+  --panel: #041004;
+  --panel-2: #071807;
+  --panel-3: #0b220b;
+  --border: #144014;
+  --border-soft: #0d2b0d;
+  --text: #b6ffb6;
+  --text-dim: #52d552;
+  --muted: #2f8f2f;
+  --accent: #00ff41;
+  --accent-dim: #00a52a;
+  --green: #00ff41;
+  --red: #ff4136;
+  --amber: #d7ff2f;
+  --purple: #6cff9e;
+  --scroll-thumb: #113d11;
+  --scroll-thumb-hover: #1a5c1a;
+  color-scheme: dark;
+}
+
+/*
+ * Thug Life: black and gold, and blackletter on the headings and the host list.
+ *
+ * The lettering is UnifrakturMaguntia, one of the fonts bundled under
+ * src/renderer/fonts (declared in fonts/fonts.css, licence beside it).
+ * It is not fixed-width, so the terminal keeps its own font; and capitals in
+ * blackletter cannot be read, so the headings lose their uppercase and gain
+ * a little size instead.
+ */
+:root[data-skin="thuglife"] {
+  --bg: #080808;
+  --panel: #101010;
+  --panel-2: #171717;
+  --panel-3: #1f1f1f;
+  --border: #3a3220;
+  --border-soft: #262014;
+  --text: #f1ece0;
+  --text-dim: #c9bfa6;
+  --muted: #9a8f74;
+  --accent: #d4af37;
+  --accent-dim: #8a7224;
+  --green: #7fd36b;
+  --red: #e5484d;
+  --amber: #f0c040;
+  --purple: #b88cff;
+  --scroll-thumb: #2e2818;
+  --scroll-thumb-hover: #463c24;
+  --blackletter: 'UnifrakturMaguntia', 'Old English Text MT', serif;
+  color-scheme: dark;
+}
+:root[data-skin="thuglife"] .sb-group-head {
+  font-family: var(--blackletter); font-size: 15px; font-weight: 400;
+  letter-spacing: .01em; text-transform: none; color: var(--accent);
+}
+/* The badges and counts in a heading are read, not admired: plain type. */
+:root[data-skin="thuglife"] .sb-group-head .tag,
+:root[data-skin="thuglife"] .sb-group-head .count {
+  font-family: var(--sans, system-ui, sans-serif); font-size: 10px; letter-spacing: 0;
+}
+:root[data-skin="thuglife"] .sb-tab,
+:root[data-skin="thuglife"] .sb-item .name,
+:root[data-skin="thuglife"] .ctx-heading {
+  font-family: var(--blackletter); letter-spacing: .01em; text-transform: none;
+}
+:root[data-skin="thuglife"] .sb-tab { font-size: 15px; }
+:root[data-skin="thuglife"] .sb-item .name { font-size: 15px; }
+:root[data-skin="thuglife"] .ctx-heading { font-size: 14px; color: var(--accent); }
+:root[data-skin="thuglife"] .modal-head h2 {
+  font-family: var(--blackletter); font-size: 21px; font-weight: 400; color: var(--accent);
+}
+
+/*
+ * A files-only session: the explorer is the pane. The terminal half and the
+ * splitter between them are gone rather than merely empty.
+ */
+.pane.files-only .pane-term,
+.pane.files-only .pane-split-h { display: none !important; }
+.pane.files-only .pane-files { flex: 1 1 auto !important; width: auto !important; max-width: none !important; }
+.pane.files-only .pmacro { display: none; }
+
+/* A submenu panel, positioned beside its parent item. */
+.ctxmenu .ctxsub { min-width: 168px; z-index: 301; }
+.ctxmenu button.has-sub .key { opacity: .55; font-size: 12px; }
+
+/* Get info: a two-column sheet of facts about a file or folder. */
+.info-grid {
+  display: grid; grid-template-columns: 124px 1fr; gap: 6px 12px;
+  font-size: 12.5px; align-items: baseline;
+}
+.info-grid .info-k { color: var(--muted); }
+.info-grid .info-v { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+
+/*
+ * The permissions explanation, folded out under the facts. Prose at reading
+ * size rather than hint size: it is there to be read once and understood, not
+ * skimmed, and the 10.5px muted treatment used for one-line notes measures
+ * badly for a paragraph.
+ */
+.perm-help {
+  margin-top: 12px; padding: 11px 12px;
+  background: var(--panel-2); border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+.perm-help.hidden { display: none; }
+.perm-note { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+.perm-note + .perm-note, .perm-list + .perm-note { margin-top: 8px; }
+.perm-note.warn { color: var(--amber); }
+.perm-lanes { display: flex; gap: 8px; margin: 10px 0; }
+.perm-lane {
+  flex: 1; text-align: center; padding: 6px 4px;
+  background: var(--bg); border: 1px solid var(--border-soft); border-radius: 5px;
+}
+.perm-bits {
+  display: block; font-family: var(--mono); font-size: 15px;
+  letter-spacing: 2px; color: var(--accent);
+}
+.perm-who {
+  display: block; margin-top: 3px; font-size: 10px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.perm-list { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.55; color: var(--text-dim); }
+.perm-list li + li { margin-top: 4px; }
+.perm-list b { color: var(--text); font-weight: 600; }
+
+/*
+ * Pinned macros in a session header. Slightly larger than the chrome around
+ * them because an icon has to be read at a glance where a glyph like ⌕ only
+ * has to be found, and a "careful" macro is tinted so the button that
+ * restarts something does not look like the one that prints uptime.
+ */
+.pmacro-pins { display: inline-flex; align-items: center; gap: 1px; }
+/* A tmux pane's own controls: commands to the session, set apart from the
+   pane's buttons by a hairline so they read as tmux's rather than ours. */
+.ptmux-ctl { display: inline-flex; align-items: center; gap: 1px;
+  padding: 0 4px; margin: 0 2px; border-left: 1px solid var(--border-soft); border-right: 1px solid var(--border-soft); }
+.ptmux-ctl.hidden { display: none; }
+/* A tmux pane whose session has ended or been left: what was on screen stays
+   readable behind the notice, but nothing about it looks live. */
+.pane.tmux-ended .pane-term { opacity: .45; filter: grayscale(.6); }
+/* Show terminal: the notice becomes a bar, the text behind it readable again. */
+.pane.overlay-peek .pane-term { opacity: 1; filter: none; }
+.pane-overlay.peek {
+  /* In the pane's own column, above its head, so it covers nothing. */
+  position: static; order: -1; flex: none; opacity: 1; justify-content: flex-start;
+  padding: 6px 10px; background: var(--panel-2); border-bottom: 1px solid var(--border);
+}
+.pane-overlay.peek .box { width: 100%; display: flex; align-items: center; gap: 10px; }
+.pane-overlay.peek h3 { margin: 0; font-size: 12px; flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-overlay.peek .box > :not(h3):not(.row) { display: none; }
+.pane-overlay.peek .row button { padding: 3px 9px; font-size: 11px; }
+.pane .ended-tag { margin-left: 7px; color: var(--amber); }
+.tab.ended { opacity: .6; font-style: italic; }
+.icon-btn.pmacro-pin { font-size: 13px; line-height: 1; }
+.icon-btn.pmacro-pin.careful { color: var(--amber); }
+.icon-btn.pmacro-pin:hover { background: var(--panel-3); }
+.sb-item .tag.pinned { flex: none; max-width: none; background: transparent; font-size: 12px; padding: 0 2px; }
+
+/* The icon chooser for a pinned macro. */
+.icon-grid {
+  display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px;
+  margin-bottom: 12px;
+}
+.icon-choice {
+  aspect-ratio: 1; font-size: 17px; line-height: 1; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--border-soft);
+  border-radius: 6px; color: inherit;
+}
+.icon-choice:hover { border-color: var(--accent); background: var(--panel-3); }
+.icon-choice.on { border-color: var(--accent); background: var(--accent-dim); }
+
+/* A macro ticking on this pane: the run button says so, and keeps saying so. */
+.icon-btn.pmacro.repeating { color: var(--accent); }
+.icon-btn.pmacro.repeating::after {
+  content: ''; position: absolute; margin: -10px 0 0 12px;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+  animation: pulse 1.4s infinite;
+}
+.icon-btn.pmacro { position: relative; }
+
+/* ---------------- Connecting animations ----------------
+   A scene plays while a session dials: two machines, a link between them, and
+   something carrying the packets across. All motion is CSS, so a scene costs
+   nothing to start and nothing to stop. */
+.canim-wrap { margin: 2px 0 14px; user-select: none; }
+.canim {
+  position: relative;
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; max-width: 320px; height: 76px;
+  margin: 0 auto;
+}
+.canim-end { width: 38px; flex: 0 0 38px; opacity: .9; }
+.canim-end svg { width: 100%; height: 38px; display: block; }
+.canim-end .body { fill: var(--panel-3); stroke: var(--border); stroke-width: 1.2; }
+.canim-end .screen { fill: var(--bg); stroke: var(--accent-dim); stroke-width: .8; }
+.canim-end .led { fill: var(--accent); animation: canim-blink 1.6s infinite; }
+.canim-end .led.b { animation-delay: .8s; }
+@keyframes canim-blink { 50% { opacity: .2; } }
+
+.canim-track { position: relative; flex: 1 1 auto; height: 100%; min-width: 60px; }
+/* The track is a size container so the travellers move in cqw — a share of
+   the track. A % in translate() is a share of the traveller itself, about
+   20px, which left it stopping a short way out from the desk. */
+.canim-track { container-type: inline-size; }
+.canim-actor {
+  position: absolute; top: 50%; left: 0;
+  font-size: 19px; line-height: 1;
+  transform: translate(0, -50%);
+  animation: canim-slide 2.8s linear infinite;
+  will-change: transform;
+}
+.canim-name {
+  margin-top: 4px; text-align: center;
+  font-size: 10.5px; letter-spacing: .04em; color: var(--muted);
+}
+
+/* ---- the link itself ---- */
+.canim-track::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%;
+  transform: translateY(-50%); pointer-events: none;
+}
+.trail-none .canim-track::before { display: none; }
+.trail-wire .canim-track::before { height: 2px; background: var(--border); }
+.trail-pipe .canim-track::before {
+  height: 16px; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--border);
+}
+.trail-beam .canim-track::before {
+  height: 3px; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: canim-glow 1.6s ease-in-out infinite;
+}
+@keyframes canim-glow { 50% { opacity: .35; } }
+.trail-dots .canim-track::before {
+  height: 4px;
+  background-image: radial-gradient(circle, var(--accent) 1.6px, transparent 1.7px);
+  background-size: 12px 4px;
+  animation: canim-flow 1s linear infinite;
+}
+.trail-dash .canim-track::before {
+  height: 2px;
+  background-image: linear-gradient(90deg, var(--muted) 50%, transparent 50%);
+  background-size: 14px 2px;
+  animation: canim-flow 1.1s linear infinite;
+}
+@keyframes canim-flow { to { background-position: 14px 0; } }
+.trail-rails .canim-track::before {
+  height: 10px;
+  border-top: 2px solid var(--border);
+  border-bottom: 2px solid var(--border);
+  background-image: linear-gradient(90deg, var(--border) 2px, transparent 2px);
+  background-size: 9px 10px;
+}
+.trail-belt .canim-track::before {
+  height: 12px; border-radius: 3px;
+  background: var(--panel-2);
+  background-image: linear-gradient(90deg, var(--border) 3px, transparent 3px);
+  background-size: 11px 12px;
+  animation: canim-flow 0.7s linear infinite;
+}
+.trail-road .canim-track::before {
+  height: 14px; border-radius: 2px; background: var(--panel-2);
+  background-image: linear-gradient(90deg, var(--muted) 40%, transparent 40%);
+  background-size: 18px 2px; background-position: 0 50%; background-repeat: repeat-x;
+}
+.trail-waves .canim-track::before {
+  height: 14px;
+  background:
+    radial-gradient(circle at 6px 12px, transparent 6px, var(--accent-dim) 6px, var(--accent-dim) 7px, transparent 7px);
+  background-size: 12px 14px;
+  opacity: .5;
+  animation: canim-flow 1.4s linear infinite;
+}
+.trail-arc .canim-track::before {
+  height: 34px; top: 46%;
+  border-top: 2px dashed var(--border);
+  border-radius: 50%/100% 100% 0 0;
+}
+.trail-bolt .canim-track::before {
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--amber) 0 6px, transparent 6px 10px);
+  animation: canim-glow .5s steps(2) infinite;
+}
+.trail-slime .canim-track::before {
+  height: 5px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--green), transparent);
+  opacity: .35;
+}
+.trail-planks .canim-track::before {
+  height: 8px;
+  background-image: linear-gradient(90deg, var(--border) 7px, transparent 7px);
+  background-size: 11px 8px;
+  animation: canim-build 2.6s linear infinite;
+}
+@keyframes canim-build { from { width: 8%; } to { width: 100%; } }
+.trail-portal .canim-track::before {
+  height: 40px; width: 40px; left: 50%; margin-left: -20px; right: auto;
+  border-radius: 50%;
+  border: 2px dashed var(--accent);
+  animation: canim-spin 3s linear infinite;
+}
+@keyframes canim-spin { to { transform: translateY(-50%) rotate(360deg); } }
+.trail-ripple .canim-track::before {
+  height: 30px; width: 30px; left: 50%; margin-left: -15px; right: auto;
+  border-radius: 50%; border: 2px solid var(--accent);
+  animation: canim-ripple 1.8s ease-out infinite;
+}
+@keyframes canim-ripple {
+  from { transform: translateY(-50%) scale(.3); opacity: .9; }
+  to { transform: translateY(-50%) scale(2.2); opacity: 0; }
+}
+
+/* ---- how the traveller crosses ---- */
+@keyframes canim-slide {
+  from { transform: translate(0, -50%); }
+  to { transform: translate(calc(100cqw - 1em), -50%); }
+}
+@keyframes canim-glide {
+  0% { transform: translate(0, -50%) rotate(-8deg); }
+  50% { transform: translate(45cqw, -120%) rotate(4deg); }
+  100% { transform: translate(calc(100cqw - 1em), -50%) rotate(-8deg); }
+}
+@keyframes canim-flap {
+  0% { transform: translate(0, -50%) scaleX(1); }
+  25% { transform: translate(22cqw, -130%) scaleX(.92); }
+  50% { transform: translate(50cqw, -30%) scaleX(1); }
+  75% { transform: translate(76cqw, -120%) scaleX(.92); }
+  100% { transform: translate(calc(100cqw - 1em), -50%) scaleX(1); }
+}
+@keyframes canim-arc {
+  0% { transform: translate(0, -50%); }
+  50% { transform: translate(45cqw, -210%); }
+  100% { transform: translate(calc(100cqw - 1em), -50%); }
+}
+@keyframes canim-bob {
+  0%, 100% { transform: translate(0, -50%) rotate(-4deg); }
+  50% { transform: translate(45cqw, -85%) rotate(5deg); }
+  99% { transform: translate(calc(100cqw - 1em), -50%) rotate(-4deg); }
+}
+@keyframes canim-shoot {
+  0% { transform: translate(0, -50%); }
+  12% { transform: translate(0, -50%); }
+  60% { transform: translate(calc(100cqw - 1em), -50%); }
+  100% { transform: translate(calc(100cqw - 1em), -50%); opacity: 0; }
+}
+@keyframes canim-zip {
+  0% { transform: translate(0, -50%) scale(.6); opacity: 0; }
+  20% { opacity: 1; }
+  45% { transform: translate(calc(100cqw - 1em), -50%) scale(1.1); opacity: 1; }
+  55%, 100% { opacity: 0; transform: translate(calc(100cqw - 1em), -50%); }
+}
+@keyframes canim-crawl {
+  0% { transform: translate(0, -50%); }
+  100% { transform: translate(calc(100cqw - 1em), -50%); }
+}
+@keyframes canim-drift {
+  0% { transform: translate(0, -40%); }
+  33% { transform: translate(30cqw, -80%); }
+  66% { transform: translate(65cqw, -25%); }
+  100% { transform: translate(calc(100cqw - 1em), -60%); }
+}
+@keyframes canim-hover {
+  0% { transform: translate(0, -50%); }
+  20% { transform: translate(18cqw, -90%); }
+  50% { transform: translate(50cqw, -50%); }
+  80% { transform: translate(80cqw, -95%); }
+  100% { transform: translate(calc(100cqw - 1em), -50%); }
+}
+@keyframes canim-roll {
+  0% { transform: translate(0, -50%) rotate(0); }
+  100% { transform: translate(calc(100cqw - 1em), -50%) rotate(720deg); }
+}
+@keyframes canim-beamup {
+  0% { transform: translate(0, -50%) scale(1); opacity: 1; }
+  25% { transform: translate(15cqw, -50%) scale(.2); opacity: 0; }
+  50% { transform: translate(50cqw, -50%) scale(.2); opacity: 0; }
+  75% { transform: translate(85cqw, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(calc(100cqw - 1em), -50%) scale(1); opacity: 1; }
+}
+@keyframes canim-pulse {
+  0%, 100% { transform: translate(40cqw, -50%) scale(.9); }
+  50% { transform: translate(40cqw, -50%) scale(1.25); }
+}
+@keyframes canim-build-run {
+  0% { transform: translate(0, -50%); }
+  85% { transform: translate(calc(100cqw - 1em), -50%); }
+  100% { transform: translate(calc(100cqw - 1em), -50%); opacity: 0; }
+}
+@keyframes canim-chase {
+  0% { transform: translate(0, -50%); }
+  100% { transform: translate(calc(100cqw - 1em), -50%); }
+}
+
+.canim-slide .canim-actor { animation-name: canim-slide; }
+.canim-glide .canim-actor { animation-name: canim-glide; animation-timing-function: ease-in-out; }
+.canim-flap .canim-actor { animation-name: canim-flap; animation-duration: 3s; animation-timing-function: ease-in-out; }
+.canim-arc .canim-actor { animation-name: canim-arc; animation-timing-function: ease-in-out; animation-duration: 3.2s; }
+.canim-bob .canim-actor { animation-name: canim-bob; animation-duration: 3.4s; animation-timing-function: ease-in-out; }
+.canim-shoot .canim-actor { animation-name: canim-shoot; animation-duration: 2.2s; animation-timing-function: cubic-bezier(.6,0,.2,1); }
+.canim-zip .canim-actor { animation-name: canim-zip; animation-duration: 1.6s; }
+.canim-crawl .canim-actor { animation-name: canim-crawl; animation-duration: 9s; }
+.canim-drift .canim-actor { animation-name: canim-drift; animation-duration: 5s; animation-timing-function: ease-in-out; }
+.canim-hover .canim-actor { animation-name: canim-hover; animation-duration: 3.6s; animation-timing-function: ease-in-out; }
+.canim-roll .canim-actor { animation-name: canim-roll; animation-duration: 3s; }
+.canim-beamup .canim-actor { animation-name: canim-beamup; animation-duration: 3s; }
+.canim-pulse .canim-actor { animation-name: canim-pulse; animation-duration: 1.8s; animation-timing-function: ease-in-out; }
+.canim-build .canim-actor { animation-name: canim-build-run; animation-duration: 2.6s; }
+.canim-convoy .canim-actor { animation-name: canim-slide; animation-duration: 3.4s; }
+.canim-march .canim-actor { animation-name: canim-slide; animation-duration: 4s; animation-timing-function: steps(14, end); }
+.canim-chase .canim-actor { animation-name: canim-chase; animation-duration: 2.4s; animation-timing-function: cubic-bezier(.4,0,.6,1); }
+
+/* Somebody who has asked for less movement gets the scene, standing still. */
+@media (prefers-reduced-motion: reduce) {
+  .canim-actor, .canim-track::before, .canim-end .led { animation: none !important; }
+  .canim-actor { transform: translate(40cqw, -50%); }
+}
+
+/* The New Session picker groups its rows: what you were on, then everything. */
+.picker-head {
+  padding: 8px 10px 4px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted);
+}
+.picker-head:first-child { padding-top: 2px; }
+.picker-item .tag.warn { background: var(--amber); color: #1c2128; }
+
+/* Settings: the list of tsh homes. */
+.homes-list { display: flex; flex-direction: column; gap: 4px; }
+.home-row {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 6px; background: var(--panel-2);
+  border: 1px solid var(--border-soft); border-radius: 5px;
+}
+.home-row .hpath {
+  flex: 1; min-width: 0; font-family: var(--mono); font-size: 11.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left;
+}
+.modal-body .hint { white-space: pre-wrap; }
+
+/*
+ * The "start a beam" row at the foot of a beams group. It is an action in a
+ * list of things, so it reads as a row rather than as a button, but in the
+ * accent colour so it is not mistaken for one of them.
+ */
+/*
+ * A section inside a group: the beams under a cluster's nodes. Indented to
+ * the depth of the rows it introduces, so it reads as part of the group
+ * rather than as another group heading.
+ */
+.sb-subhead {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px 2px 20px; margin-top: 2px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 9.5px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.sb-subhead-n { opacity: .65; font-weight: 400; }
+/* Beams | Phases: the subheading as two tabs, where tsh can do Phases. */
+.sb-subhead.beam-tabs { gap: 2px; padding-left: 16px; }
+.beam-tab {
+  display: inline-flex; gap: 5px; align-items: center;
+  border: 0; background: transparent; color: inherit; font: inherit;
+  letter-spacing: inherit; text-transform: inherit;
+  padding: 1px 6px 2px; border-bottom: 2px solid transparent; cursor: pointer; opacity: .7;
+}
+.beam-tab:hover { opacity: 1; }
+.beam-tab.active { opacity: 1; color: var(--text); border-bottom-color: var(--accent); }
+.beam-tab-refresh { margin-left: auto; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; }
+.beam-tab-refresh:hover { color: var(--text); }
+/* A beam, wherever it is listed: its own colour among the servers. */
+.sb-item .tag.beams, .sb-group-head .tag.beams {
+  flex: none; max-width: none;
+  background: color-mix(in srgb, var(--purple) 18%, transparent); color: var(--purple);
+}
+
+.sb-item.beam-add { color: var(--accent); font-weight: 500; }
+.sb-item.beam-add:hover { background: var(--panel-2); }
+
+/* Badges on a sidebar group heading: which tsh home, and its state. */
+.sb-group-head .gtags { display: inline-flex; align-items: center; gap: 4px; }
+
+/*
+ * The leaf-cluster badge. Unlike its neighbours it is a control, not a label —
+ * it opens the cluster menu — so it gets a hit area, a pointer, and a hover
+ * state. Green while it is only advertising leaves; the accent once the login
+ * is actually pointed at one, which is the state worth noticing.
+ */
+.tag.leafc {
+  display: inline-flex; align-items: center; gap: 3px;
+  flex: none; max-width: none;
+  padding: 1px 5px; border-radius: 3px; cursor: pointer;
+  font-size: 9.5px; letter-spacing: .04em;
+  background: var(--panel-3); color: var(--green);
+  border: 1px solid transparent;
+}
+.tag.leafc:hover { border-color: currentColor; }
+.tag.leafc.on { background: var(--accent-dim); color: #fff; border-color: var(--accent); }
+.tag.leafc svg { flex: none; }
+
+/*
+ * The ⟳ on a group heading: refresh this cluster, or this config file, rather
+ * than the whole inventory. Dim until the heading is hovered — one per group
+ * would otherwise be a column of buttons down the sidebar.
+ */
+.sb-group-head .gbtn {
+  flex: none; cursor: pointer; opacity: 0;
+  padding: 0 3px; border-radius: 3px;
+  font-size: 11px; line-height: 1; color: var(--muted);
+  transition: opacity .12s, color .12s;
+}
+.sb-group-head:hover .gbtn { opacity: .75; }
+.sb-group-head .gbtn:hover { opacity: 1; color: var(--accent); }
+.sb-group-head .gbtn.spin {
+  opacity: 1; color: var(--accent);
+  animation: sl-spin .9s linear infinite;
+}
+@keyframes sl-spin { to { transform: rotate(360deg); } }
+
+/*
+ * A host's star. Only the filled one is drawn at rest; the hollow outline
+ * appears on hover, so starring is discoverable without putting a column of
+ * empty stars beside every host in the fleet.
+ */
+.sb-item .hstar {
+  flex: none; cursor: pointer; width: 11px;
+  font-size: 10px; line-height: 1; color: var(--muted); opacity: 0;
+  transition: opacity .12s, color .12s;
+}
+.sb-item:hover .hstar { opacity: .55; }
+.sb-item .hstar.on { opacity: 1; color: var(--amber); }
+.sb-item .hstar:hover { opacity: 1; color: var(--amber); }
+
+/*
+ * The keyword-highlighting toggle, beside the pane's search box. Lit when it
+ * is doing something, so a glance says whether output is being coloured.
+ */
+.pane-head .phl { opacity: .5; }
+.pane-head .phl:hover { opacity: 1; }
+.pane-head .phl.active { opacity: 1; color: var(--amber); }
+
+/* ---------------- network tools: curl, saved calls, recent runs ------- */
+
+/* The response renderer uses short class names inside a row. */
+.nt-kv .k { color: var(--muted); }
+.nt-kv .v { font-family: var(--mono); font-size: 11.5px; word-break: break-word; }
+.nt-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; margin-bottom: 11px;
+}
+.nt-meta { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.nt-sub {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--muted); margin: 13px 0 5px;
+}
+
+/* The curl form. Textareas rather than single lines: headers and a JSON body
+   are both multi-line by nature, and shrinking them helps nobody. */
+.nt-curl { margin: 4px 0 2px; }
+.nt-ta {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  padding: 7px 9px; border-radius: var(--radius);
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+}
+.nt-ta:focus { outline: none; border-color: var(--accent); }
+
+/* Saved calls and recent runs, as two strips of chips. */
+.nt-strips { display: flex; flex-direction: column; gap: 7px; margin: 9px 0 4px; }
+.nt-saved-head {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 5px;
+  font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted);
+}
+.nt-saved-row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.nt-chip {
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  max-width: 260px; padding: 2px 7px; border-radius: 3px;
+  background: var(--panel-3); color: var(--text-dim);
+  font-size: 11px; border: 1px solid transparent;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.nt-chip:hover { border-color: var(--accent); color: var(--text); }
+.nt-chip .m {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em;
+  color: var(--accent); flex: none;
+}
+.nt-chip.bad .m { color: var(--red); }
+
+/*
+ * The starred-folder button in an explorer's toolbar. Lit when the folder on
+ * screen is one of the kept ones, so the toolbar answers "have I starred this"
+ * without opening anything.
+ */
+.fpane-actions .ffav { color: var(--muted); }
+.fpane-actions .ffav:hover { color: var(--amber); }
+.fpane-actions .ffav.active { color: var(--amber); }
+
+/* ---------------- the guide ---------------- */
+
+.guide-top { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
+.guide-search {
+  flex: 1; padding: 6px 9px; border-radius: var(--radius);
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.guide-search:focus { outline: none; border-color: var(--accent); }
+.guide-count { font-size: 11px; color: var(--muted); min-width: 80px; text-align: right; }
+
+/* A section list beside the text: a reference is navigated, not scrolled. */
+.guide-split { display: flex; gap: 14px; align-items: flex-start; }
+.guide-nav {
+  flex: 0 0 196px; max-height: 60vh; overflow: auto;
+  border-right: 1px solid var(--border-soft); padding-right: 10px;
+}
+.guide-nav-item {
+  padding: 3px 6px; border-radius: 3px; cursor: pointer;
+  font-size: 12px; color: var(--text-dim);
+}
+.guide-nav-item:hover { background: var(--panel-3); color: var(--text); }
+.guide-nav-item.lvl2 { padding-left: 15px; font-size: 11.5px; opacity: .85; }
+.guide-nav-empty { font-size: 11.5px; color: var(--muted); padding: 4px 6px; }
+
+.guide-content { flex: 1; min-width: 0; max-height: 60vh; overflow: auto; padding-right: 4px; }
+.guide-body { font-size: 12.5px; line-height: 1.65; color: var(--text-dim); }
+.guide-body p { margin: 0 0 10px; }
+.guide-body strong { color: var(--text); }
+.guide-body a { color: var(--accent); text-decoration: none; }
+.guide-body a:hover { text-decoration: underline; }
+.guide-body code {
+  font-family: var(--mono); font-size: 11.5px;
+  background: var(--panel-2); border: 1px solid var(--border-soft);
+  border-radius: 3px; padding: 0 4px; color: var(--text);
+}
+.guide-h { color: var(--text); margin: 18px 0 8px; }
+.guide-h1 { font-size: 16px; }
+.guide-h2 { font-size: 14px; }
+.guide-h3 { font-size: 12.5px; letter-spacing: .02em; }
+.guide-h4 { font-size: 12px; color: var(--text-dim); }
+.guide-hr { border: 0; border-top: 1px solid var(--border-soft); margin: 16px 0; }
+.guide-list { margin: 0 0 10px; padding-left: 18px; }
+.guide-list li { margin-bottom: 4px; }
+.guide-pre {
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.55;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 9px 11px; margin: 0 0 11px;
+  overflow: auto; color: var(--text);
+}
+.guide-pre code { background: none; border: 0; padding: 0; }
+.guide-table { border-collapse: collapse; margin: 0 0 12px; width: 100%; }
+.guide-table th, .guide-table td {
+  border: 1px solid var(--border-soft); padding: 5px 8px;
+  font-size: 12px; text-align: left; vertical-align: top;
+}
+.guide-table th { color: var(--text); background: var(--panel-2); font-weight: 600; }
+.guide-note {
+  border-left: 2px solid var(--amber); background: var(--panel-2);
+  padding: 8px 11px; margin: 0 0 12px; border-radius: 0 var(--radius) var(--radius) 0;
+}
+.guide-note-head {
+  font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--amber); margin-bottom: 4px;
+}
+/* Search marks: every hit visible, the current one obvious. */
+.guide-mark { background: var(--amber); color: #0d1117; border-radius: 2px; }
+.guide-mark.on { background: var(--accent); color: #fff; }
+
+/*
+ * A resizable dialog. The handle is the corner; the panels inside are given a
+ * height to fill, or a taller dialog would just add empty space under them.
+ */
+.modal.resizable {
+  resize: both; overflow: hidden;
+  min-width: 420px; min-height: 260px;
+  max-width: calc(100vw - 24px); max-height: calc(100vh - 24px);
+  display: flex; flex-direction: column;
+}
+.modal.resizable .modal-body { flex: 1; min-height: 0; overflow: auto; }
+.modal.resizable .nt-body { max-height: none; }
+.modal.resizable .guide-content,
+.modal.resizable .guide-nav { max-height: none; }
+.modal.resizable .guide-split { flex: 1; min-height: 0; align-items: stretch; }
+.modal.resizable .guide-content { overflow: auto; }
+.modal.resizable .guide-nav { overflow: auto; }
+
+/*
+ * The guide's own body: a fixed search row above a pane that scrolls. Without
+ * this the whole dialog scrolled and the search box left the screen.
+ */
+.modal .modal-body.guide-modal-body,
+.modal.resizable .modal-body.guide-modal-body {
+  display: flex; flex-direction: column; overflow: hidden; min-height: 0;
+}
+.modal-body.guide-modal-body .guide-split { flex: 1; min-height: 0; }
+/*
+ * `min-height: 0` is the whole trick: a flex item defaults to min-height auto,
+ * so the text pane refused to shrink below its own 14,000px and pushed the
+ * search box and the section list off the top of the screen instead of
+ * scrolling inside itself.
+ */
+.modal-body.guide-modal-body .guide-content,
+.modal-body.guide-modal-body .guide-nav {
+  max-height: none; height: auto; min-height: 0; overflow: auto;
+}
+/* A section the current search has hits in. */
+.guide-nav-item.hit { color: var(--amber); }
+.guide-nav-item.hit:hover { color: var(--amber); }
+
+/* A host being dragged into position, and where it would land. */
+.sb-item.dragging { opacity: .45; }
+.sb-item.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.sb-item.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+
+/*
+ * The starred folders above an explorer's file list: a short list of places,
+ * with its own collapsible heading. Capped in height so a long list of
+ * favourites can never crowd out the files themselves.
+ */
+.fpane-favs { border-bottom: 1px solid var(--border-soft); flex: none; }
+.fav-head {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 4px 9px 3px;
+  font-size: 9.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); user-select: none;
+}
+.fav-head:hover { color: var(--text-dim); }
+.fav-head .chev { font-size: 8px; transition: transform .12s; }
+.fav-head.collapsed .chev { transform: rotate(-90deg); }
+.fav-head .n { margin-left: auto; opacity: .7; font-weight: 400; }
+.fav-row {
+  display: flex; align-items: center; gap: 7px; cursor: pointer;
+  padding: 2px 9px; font-size: 12px; color: var(--text-dim);
+}
+.fav-row:hover { background: var(--panel-2); color: var(--text); }
+.fav-row .g { color: var(--amber); font-size: 9px; flex: none; }
+.fav-row .nm { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fav-row .pth {
+  flex: 1; min-width: 0; text-align: right;
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fav-row .sc {
+  flex: none; font-size: 9px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--purple);
+}
+/* The folder the pane is in, so the list says where you are as well. */
+.fav-row.on { background: var(--accent-dim); color: #fff; }
+.fav-row.on .pth, .fav-row.on .g, .fav-row.on .sc { color: #fff; opacity: .85; }
+.fav-empty { padding: 2px 9px 5px; font-size: 11px; color: var(--muted); opacity: .75; }
+
+/* A starred file rather than a folder: it opens instead of navigating. */
+.fav-row.file .g { color: var(--accent); }
+
+/* Queue-wide transfer control: hold everything, and cap the speed. */
+.xfer-bar {
+  display: flex; align-items: center; gap: 7px;
+  padding: 0 2px 8px; margin-bottom: 6px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.xfer-limit {
+  width: 78px; padding: 3px 6px; border-radius: var(--radius);
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  font-family: var(--mono); font-size: 11.5px;
+}
+.xfer-limit:focus { outline: none; border-color: var(--accent); }
+/* A held transfer reads as held rather than as broken. */
+.xfer-row.paused .xpct { color: var(--amber); }
+.xfer-row.paused .xbar i { background: var(--amber); opacity: .6; }
+
+/* ---------------- recursive search ---------------- */
+
+.srch-list {
+  max-height: 46vh; overflow: auto;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--panel-2);
+}
+.modal.resizable .srch-list { max-height: none; height: 100%; min-height: 120px; }
+.srch-row {
+  display: flex; align-items: flex-start; gap: 8px; cursor: pointer;
+  padding: 5px 9px; border-bottom: 1px solid var(--border-soft);
+}
+.srch-row:last-child { border-bottom: 0; }
+.srch-row:hover { background: var(--panel-3); }
+.srch-row .g { flex: none; font-size: 11px; opacity: .8; }
+.srch-row .body { flex: 1; min-width: 0; }
+.srch-row .nm { font-size: 12px; color: var(--text); }
+.srch-row .pth {
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The matching line, for a content search. */
+.srch-row .ex {
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-dim);
+  margin-top: 2px; white-space: pre-wrap; word-break: break-all;
+  max-height: 34px; overflow: hidden;
+}
+.srch-row .sz { flex: none; font-size: 10.5px; color: var(--muted); font-family: var(--mono); }
+
+/* ---------------- a host's own colour ---------------- */
+
+/*
+ * A bar down the left edge, not a dot: visible in peripheral vision, which is
+ * the point of colouring a host — knowing the pane you are typing into is
+ * production without reading its name.
+ */
+.sb-item.coloured { box-shadow: inset 2px 0 0 var(--host-color); }
+.sb-item.coloured .name { color: var(--host-color); }
+.sb-item.careful .name::after {
+  content: '!'; margin-left: 4px; font-weight: 700; color: var(--amber);
+}
+.tab.coloured { box-shadow: inset 0 -2px 0 var(--host-color); }
+.tab.coloured .label { color: var(--host-color); }
+.pane.coloured > .pane-head { box-shadow: inset 2px 0 0 var(--host-color); }
+.pane.coloured > .pane-head .pname { color: var(--host-color); }
+
+/* Multi-exec targets chosen by tag rather than by ticking. */
+.mx-selector-wrap { margin: 2px 0 8px; }
+.mx-selector {
+  display: flex; align-items: center; gap: 6px; margin-top: 6px;
+}
+.mx-selector.off { opacity: .45; pointer-events: none; }
+.mx-query {
+  flex: 1; min-width: 0; padding: 4px 8px; border-radius: var(--radius);
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  font-family: var(--mono); font-size: 11.5px;
+}
+.mx-query:focus { outline: none; border-color: var(--accent); }
+
+/* ---------------- outstanding access requests ---------------- */
+
+/*
+ * A badge on the Teleport tab. Amber while a reviewer still has it, green once
+ * there is an approval to use — the two states you act on differently.
+ */
+.sb-tab { position: relative; }
+.req-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 15px; height: 15px; margin-left: 5px; padding: 0 4px;
+  border-radius: 8px; font-size: 9.5px; font-weight: 700;
+  background: var(--amber); color: #0d1117;
+}
+.req-badge.ok { background: var(--green); }
+/* The same thing per cluster, on its heading. */
+.sb-group-head .tag.req {
+  flex: none; max-width: none; cursor: pointer;
+  padding: 1px 4px; letter-spacing: 0;
+  background: var(--panel-3); color: var(--amber);
+  border: 1px solid transparent;
+}
+.sb-group-head .tag.req:hover { border-color: currentColor; }
+.sb-group-head .tag.req.ok { color: var(--green); }
+
+/*
+ * A submenu arrow you can aim at. Widened and given a hover state because it
+ * is now a control rather than a decoration: on a row that also runs
+ * something, the arrow is what opens the submenu.
+ */
+.ctxmenu .key.sub-arrow {
+  display: inline-flex; align-items: center; gap: 0;
+  padding: 0 2px 0 8px; margin: -3px -4px -3px 0; border-radius: 3px;
+}
+.ctxmenu .key.sub-arrow .arrow { padding: 0 3px; }
+.ctxmenu button:hover .key.sub-arrow:hover { background: var(--panel-3); color: var(--text); }
+
+/*
+ * The `?` on a menu row: its own hover target, so "what does this do" does not
+ * require hovering the thing you have not decided to run yet.
+ */
+.ctxmenu .ctx-help {
+  flex: none; margin-left: 6px; width: 13px; height: 13px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 7px; font-size: 9px; font-weight: 700;
+  background: var(--panel-3); color: var(--muted); cursor: help;
+}
+.ctxmenu button:hover .ctx-help { color: var(--text-dim); }
+.ctxmenu .ctx-help:hover { background: var(--accent); color: #fff; }
+
+/*
+ * A row in the reopen offer: clicking it brings back that one session, so a
+ * long-weekend layout does not have to be taken whole.
+ */
+.picker-item.restorable { cursor: pointer; }
+.picker-item.restorable:hover { background: var(--panel-3); }
+.picker-item.restorable.done { opacity: .5; cursor: default; }
+.picker-item.restorable.done:hover { background: none; }
+
+/*
+ * The card behind a `?`. A native tooltip wanted a steady second of hover on a
+ * 13px target and vanished at the first twitch; this appears at once and says
+ * the two things worth knowing — what the item answers, and what it runs.
+ */
+.ctx-helpcard {
+  /* Above the menu (300) and its submenus (301), or it reads as clipped. */
+  position: fixed; z-index: 320; max-width: 420px;
+  padding: 9px 11px; border-radius: var(--radius);
+  background: var(--panel); border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  pointer-events: none;
+}
+.ctx-helpcard .answers { font-size: 12.5px; color: var(--text); line-height: 1.5; }
+.ctx-helpcard .cmd-label {
+  margin: 8px 0 3px; font-size: 9.5px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+.ctx-helpcard .cmd {
+  margin: 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word; color: var(--text-dim);
+  background: var(--panel-2); border: 1px solid var(--border-soft);
+  border-radius: 3px; padding: 6px 8px; max-height: 190px; overflow: hidden;
+}
+.ctx-helpcard .note { margin-top: 6px; font-size: 11.5px; color: var(--amber); }
+
+/* Where a network check will run, and what that host can do. */
+.nt-caps {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  margin: 2px 0 8px; font-size: 11px;
+}
+.nt-caps .sub { color: var(--muted); }
+.nt-port.unknown { border-color: var(--border); }
+.nt-port.unknown .nt-port-state { color: var(--muted); }
+
+/*
+ * Hosts a fan-out could not dial.
+ *
+ * Amber rather than red: nothing ran on them, so nothing is broken — it is
+ * unfinished work, and the button beside it is how you finish it. Sits above
+ * the results because a run that reached eighteen of twenty otherwise reads
+ * as a success; the two that failed are not in the result list at all.
+ */
+.mx-failed {
+  margin: 8px 0 4px; border: 1px solid var(--amber);
+  border-radius: var(--radius); overflow: hidden;
+  background: color-mix(in srgb, var(--amber) 7%, transparent);
+}
+.mx-failed-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; font-size: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--amber) 30%, transparent);
+}
+.mx-failed-head .n {
+  font-weight: 700; color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+.mx-failed-row {
+  display: flex; gap: 10px; align-items: baseline;
+  padding: 4px 10px; font-size: 11.5px;
+}
+.mx-failed-row .h { font-family: var(--mono); color: var(--text-dim); flex: none; }
+.mx-failed-row .e {
+  color: var(--muted); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Network tools from this pane's host. */
+.pane-head .pnet { color: var(--muted); }
+.pane-head .pnet:hover { color: var(--accent); }
+
+/*
+ * Whether a cluster is usable, at a glance.
+ *
+ * The two words that matter on a cluster heading are "active" — plain tsh
+ * commands go here — and "expired", which means every host under it will
+ * refuse. Both were the same grey as the home name and the leaf count beside
+ * them, so neither read as a state at all.
+ *
+ * The tint is mixed from the theme's own --green and --red rather than being
+ * a fixed pair of hex values, so it follows light and dark instead of being a
+ * dark chip on a white sidebar the way the older badges are. Kept light: this
+ * is a label on a heading, not a warning banner, and the heading's own name
+ * should still be the first thing read.
+ */
+.sb-group-head .tag.live, .sb-item .tag.live,
+.sb-group-head .tag.expired, .sb-item .tag.expired {
+  flex: none; max-width: none;
+}
+.sb-group-head .tag.live, .sb-item .tag.live {
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+  color: var(--green);
+  font-weight: 600;
+}
+/*
+ * Quieter than the green, deliberately.
+ *
+ * An expired cluster is a fact about the heading, not an alarm — the login is
+ * a right-click away and nothing is broken. At full --red it read as an error
+ * banner and pulled the eye away from the cluster names, which is the wrong
+ * thing to be looking at. The red is muted toward the sidebar's own dim text
+ * so it still says "not this one" without shouting it.
+ */
+.sb-group-head .tag.expired, .sb-item .tag.expired {
+  /*
+   * As quiet as a tag can be and still be one: the same neutral chip as the
+   * home name and the leaf count beside it, with the red left only in the
+   * word. Tinting the background too was what made it read as a state worth
+   * reacting to, and an expired certificate is not — the login is a
+   * right-click away.
+   */
+  background: var(--panel-3);
+  /*
+   * Mostly the sidebar's own dim grey with a trace of red, then pulled toward
+   * the panel behind it. Mixing toward --panel rather than toward black is
+   * what makes this mean the same thing in both themes: the chip recedes into
+   * its background either way, instead of darkening on a dark sidebar and
+   * inverting into a pale smudge on a light one.
+   */
+  color: color-mix(in srgb,
+    color-mix(in srgb, var(--red) 15%, var(--muted)) 80%, var(--panel));
+  font-weight: 500;
+}
+/*
+ * Not quieted the way `expired` is — this one is still actionable. A cluster
+ * under an hour from needing a fresh login is the moment logging in again is
+ * still routine; past it, the row already says "expired" and there is
+ * nothing left to warn about.
+ */
+.sb-group-head .tag.soon, .sb-item .tag.soon {
+  flex: none; max-width: none;
+  background: color-mix(in srgb, var(--amber) 18%, transparent);
+  color: var(--amber);
+  font-weight: 600;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* The folder browser                                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A file-manager layout in a dialog: a fixed tree on the left, a listing
+ * that takes the rest, and one row of controls above both. The dialog is
+ * resizable and remembers its size, because the useful shape depends on
+ * whether you are building folders or reading what is in one.
+ */
+.fv-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; height: 100%; }
+.fv-bar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.fv-bar .fv-group { max-width: 220px; }
+.fv-bar input[type="text"] { max-width: 210px; }
+.fv-crumbs { display: flex; align-items: center; gap: 3px; min-width: 0; overflow: hidden; }
+.fv-crumb {
+  background: none; border: 0; color: var(--muted); cursor: pointer;
+  font: inherit; font-size: 12px; padding: 2px 5px; border-radius: 4px;
+  white-space: nowrap;
+}
+.fv-crumb:hover { background: var(--panel-2); color: var(--text); }
+.fv-crumb.on { color: var(--text); font-weight: 600; }
+.fv-crumbs .sepc { color: var(--muted); font-size: 11px; }
+
+.fv-main {
+  display: flex; gap: 10px; flex: 1 1 auto; min-height: 260px;
+  border: 1px solid var(--border-soft); border-radius: var(--radius); overflow: hidden;
+}
+.fv-tree {
+  width: 240px; flex: none; overflow: auto; padding: 6px 0;
+  border-right: 1px solid var(--border-soft); background: var(--panel-2);
+}
+.fv-list { flex: 1 1 auto; overflow: auto; padding: 6px; min-width: 0; }
+
+.fv-tgroup {
+  padding: 6px 10px; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fv-tgroup:hover { color: var(--text); }
+.fv-tgroup.on { color: var(--text); background: var(--panel-3); }
+.fv-trow {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 4px 8px 4px calc(10px + var(--depth, 0) * 12px);
+  font-size: 12.5px; color: var(--text-dim); white-space: nowrap;
+}
+.fv-trow:hover { background: var(--panel-3); color: var(--text); }
+.fv-trow.on { background: var(--accent-dim); color: #fff; }
+.fv-trow .chev { width: 10px; font-size: 8px; color: var(--muted); flex: none; }
+.fv-trow .name { overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; }
+.fv-trow .count { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fv-trow.on .count { color: rgba(255,255,255,.8); }
+.fv-trow .tag.rule { font-size: 9px; padding: 0 4px; border-radius: 3px; background: var(--panel-3); color: var(--muted); }
+.fv-trow.unfiled { margin-top: 6px; border-top: 1px solid var(--border-soft); padding-top: 7px; }
+
+/* A listing row: big enough to hit with a mouse and to read at a glance. */
+.fv-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 9px; border-radius: var(--radius); font-size: 12.5px;
+  cursor: default; user-select: none; border: 1px solid transparent;
+}
+.fv-row:hover { background: var(--panel-2); }
+.fv-row.picked { background: var(--accent-dim); color: #fff; border-color: var(--accent); }
+.fv-row.folder { cursor: pointer; }
+.fv-row .st { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex: none; }
+.fv-row .st.connected { background: var(--green); }
+.fv-row .fv-name { font-weight: 550; white-space: nowrap; }
+.fv-row .fv-meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.fv-row.picked .fv-meta { color: rgba(255,255,255,.75); }
+.fv-row .fv-tags { display: flex; gap: 3px; overflow: hidden; min-width: 0; }
+.fv-row .tag.rule, .fv-row .tag.hb, .fv-row .tag.stale { font-size: 9px; padding: 0 4px; border-radius: 3px; }
+.fv-row .tag.rule { background: var(--panel-3); color: var(--muted); }
+.fv-row .tag.hb { color: var(--muted); }
+.fv-row .tag.stale {
+  color: var(--amber); background: color-mix(in srgb, var(--amber) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
+}
+.chip.sm { font-size: 9.5px; padding: 0 4px; }
+
+/* The rule, above what it currently claims — the two belong on one screen. */
+.fv-rule {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 6px 9px; margin-bottom: 6px; font-size: 11.5px;
+  background: var(--panel-2); border-radius: var(--radius);
+}
+.fv-rule .k { color: var(--muted); text-transform: uppercase; font-size: 9.5px; letter-spacing: .06em; }
+.fv-rule code { font-family: var(--mono); color: var(--text); }
+.fv-rule .warn { color: var(--amber); }
+.fv-empty { padding: 26px 12px; text-align: center; color: var(--muted); font-size: 12.5px; }
+.fv-foot { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); }
+.fv-foot .sel { color: var(--text); }
+
+
+/* The coloured folder, in the browser's tree and its listing. */
+.fv-trow.coloured .name, .fv-row.folder.coloured .fv-name { color: var(--folder-color); }
+.fv-trow.coloured { box-shadow: inset 2px 0 0 var(--folder-color); }
+.fv-trow.on.coloured .name { color: #fff; }
+
+/* ------------------------------------------------------------------ */
+/* Icon and colour pickers                                             */
+/* ------------------------------------------------------------------ */
+
+.icon-picker { display: flex; flex-direction: column; gap: 8px; }
+.icon-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+.icon-cell {
+  width: 30px; height: 28px; font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--panel-2); border: 1px solid var(--border-soft);
+  border-radius: var(--radius); cursor: pointer; padding: 0;
+}
+.icon-cell:hover { background: var(--panel-3); }
+.icon-cell.on { border-color: var(--accent); background: var(--accent-dim); }
+.icon-row { display: flex; gap: 6px; align-items: center; }
+.icon-custom { width: 120px; text-align: center; font-size: 14px; }
+/* A swatch is the colour itself — a label beside it would say less. */
+.color-cell {
+  width: 30px; height: 22px; border-radius: var(--radius); cursor: pointer;
+  border: 1px solid var(--border); background: var(--swatch, transparent); padding: 0;
+  color: var(--muted); font-size: 11px;
+}
+.color-cell.on { outline: 2px solid var(--text); outline-offset: 1px; }
+.color-cell.none { background: var(--panel-2); }
+
+
+/* ------------------------------------------------------------------ */
+/* The folder rule builder                                             */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Pickers first, then the verdict, then the names.
+ *
+ * The hard part of writing a rule is never the syntax, it is not knowing
+ * what this cluster calls things — so the vocabulary is a list to pick from
+ * and the answer is on screen while the rule is being typed. The matched
+ * names are chips rather than a list: a rule that claims forty machines
+ * should look like forty machines at a glance.
+ */
+.rule-builder { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 7px; }
+.rule-pick { max-width: 210px; font-size: 11.5px; padding: 2px 4px; }
+.rule-note { margin-top: 7px; font-size: 11.5px; color: var(--muted); }
+.rule-note.warn { color: var(--amber); }
+.rule-hits {
+  display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px;
+  max-height: 96px; overflow: auto;
+}
+.rule-hit {
+  font-size: 10.5px; padding: 1px 6px; border-radius: 3px;
+  background: var(--panel-3); color: var(--text-dim); white-space: nowrap;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* The hosts pane                                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A pane showing the inventory instead of a session. It is an ordinary pane
+ * with its terminal and explorer hidden, so everything that lays panes out
+ * keeps working; only what is inside the body changes.
+ */
+.pane.hosts-pane .pane-term,
+.pane.hosts-pane .pane-files,
+.pane.hosts-pane .pane-split-h { display: none !important; }
+/*
+ * The session controls mean nothing here — there is no session to search,
+ * no shell to run a macro in, and no files to show beside it. The close
+ * button stays, because closing is the one thing this pane does do.
+ */
+.pane.hosts-pane .pmacro,
+.pane.hosts-pane .pnet,
+.pane.hosts-pane .phl,
+.pane.hosts-pane .pfiles,
+.pane.hosts-pane .pane-search,
+.pane.hosts-pane .pmacro-pins { display: none !important; }
+.pane.hosts-pane .pname { color: var(--text); }
+
+.hp-root { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; overflow: hidden; }
+
+/*
+ * KubeLife's full-cluster browser as a pane instead of a modal — the same
+ * "ordinary pane with its terminal and explorer hidden" trick as .hosts-pane
+ * above, kept as its own class rather than reusing that one so neither can
+ * surprise the other if either grows a CSS rule keyed off the class name
+ * later rather than off the pane.isHosts/.isKubeBrowser flag.
+ */
+.pane.kube-browser-pane .pane-term,
+.pane.kube-browser-pane .pane-files,
+.pane.kube-browser-pane .pane-split-h { display: none !important; }
+.pane.kube-browser-pane .pmacro,
+.pane.kube-browser-pane .pnet,
+.pane.kube-browser-pane .phl,
+.pane.kube-browser-pane .pfiles,
+.pane.kube-browser-pane .pane-search,
+.pane.kube-browser-pane .pmacro-pins { display: none !important; }
+.pane.kube-browser-pane .pname { color: var(--text); }
+.kbp-root { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; overflow: hidden; padding: 8px; }
+/* The Log Viewer — same "ordinary pane, terminal and explorer hidden" trick, its own class for the same reason as kube-browser-pane above. */
+.pane.kube-log-viewer-pane .pane-term,
+.pane.kube-log-viewer-pane .pane-files,
+.pane.kube-log-viewer-pane .pane-split-h { display: none !important; }
+.pane.kube-log-viewer-pane .pmacro,
+.pane.kube-log-viewer-pane .pnet,
+.pane.kube-log-viewer-pane .phl,
+.pane.kube-log-viewer-pane .pfiles,
+.pane.kube-log-viewer-pane .pane-search,
+.pane.kube-log-viewer-pane .pmacro-pins { display: none !important; }
+.pane.kube-log-viewer-pane .pname { color: var(--text); }
+.klv-root { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; overflow: hidden; padding: 8px; gap: 6px; }
+.klv-bar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.klv-bar input[type=text] { flex: 1 1 220px; }
+.klv-log {
+  flex: 1 1 auto; overflow: auto; min-height: 0; background: var(--panel-2);
+  border: 1px solid var(--border-soft); border-radius: 6px; padding: 6px 8px;
+  font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-all;
+}
+.klv-log .klv-line:nth-child(odd) { background: rgba(255,255,255,.015); }
+.klv-log mark { background: var(--accent-dim); color: inherit; border-radius: 2px; }
+.hp-bar {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  padding: 7px 9px; border-bottom: 1px solid var(--border-soft); background: var(--panel);
+}
+.hp-bar .hp-group { max-width: 220px; }
+.hp-bar input[type="text"] { min-width: 180px; flex: 0 1 260px; }
+.hp-count { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Two buttons that are one control: which of them is on is the answer. */
+.hp-seg { display: flex; gap: 2px; }
+.hp-seg .ghost-btn.active, .hp-bar .ghost-btn.active {
+  background: var(--accent-dim); border-color: var(--accent); color: var(--text);
+}
+.hp-body { flex: 1 1 auto; overflow: auto; padding: 8px 9px 14px; }
+.hp-empty { padding: 30px 12px; text-align: center; color: var(--muted); font-size: 12.5px; }
+
+/* A folder heading spans the width and is the thing you drop onto. */
+.hp-head {
+  display: flex; align-items: center; gap: 7px; cursor: pointer;
+  margin: 10px 0 5px; padding: 4px 8px 4px calc(4px + var(--depth, 0) * 18px);
+  font-size: 12px; color: var(--text-dim);
+  border-radius: var(--radius); border-left: 2px solid transparent;
+}
+.hp-head:hover { background: var(--panel-2); color: var(--text); }
+.hp-head.coloured { border-left-color: var(--folder-color); }
+.hp-head.coloured .name { color: var(--folder-color); }
+.hp-head.drop-in { background: var(--accent-dim); color: #fff; }
+.hp-head .chev { font-size: 8px; color: var(--muted); }
+.hp-head .name { font-weight: 600; }
+.hp-head .count { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hp-head.unfiled .name { color: var(--muted); font-weight: 500; }
+.hp-head .tag.rule {
+  font-size: 9px; padding: 0 4px; border-radius: 3px;
+  background: var(--panel-3); color: var(--muted);
+}
+
+/* Rows by default; tiles when there are more of them than you can read. */
+.hp-grid { display: flex; flex-direction: column; gap: 2px; padding-left: calc(var(--depth, 0) * 18px); }
+.hp-grid.boxes {
+  display: grid; gap: 7px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+.hp-card {
+  border: 1px solid transparent; border-radius: var(--radius);
+  padding: 5px 9px; cursor: default; font-size: 12.5px; color: var(--text-dim);
+}
+.hp-card:hover { background: var(--panel-2); color: var(--text); }
+.hp-card.picked { background: var(--accent-dim); color: #fff; border-color: var(--accent); }
+.hp-card.quiet { box-shadow: inset 2px 0 0 var(--amber); }
+.hp-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.hp-card .st { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex: none; }
+.hp-card .st.connected { background: var(--green); }
+.hp-card .hp-name { font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hp-card .hp-meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.hp-card.picked .hp-meta { color: rgba(255,255,255,.75); }
+.hp-card .hp-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+.hp-card .tag.hb, .hp-card .tag.stale, .hp-card .tag.rule {
+  font-size: 9px; padding: 0 4px; border-radius: 3px; flex: none;
+}
+.hp-card .tag.hb { color: var(--muted); }
+.hp-card .tag.stale {
+  color: var(--amber); background: color-mix(in srgb, var(--amber) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
+}
+/* In tile mode a card is a block, so its tags wrap under the name. */
+.hp-grid.boxes .hp-card {
+  border-color: var(--border-soft); background: var(--panel-2);
+  padding: 8px 10px; min-height: 52px;
+}
+.hp-grid.boxes .hp-card:hover { background: var(--panel-3); }
+
+/* Table: real columns, one line per host — for sorting and scanning a lot
+   of them at once rather than reading a wrapped card. */
+.hp-table { display: flex; flex-direction: column; padding-left: calc(var(--depth, 0) * 18px); }
+.hp-tr {
+  display: grid; grid-template-columns: minmax(140px, 1.6fr) 110px minmax(100px, 1fr) minmax(140px, 2fr);
+  align-items: center; gap: 10px; padding: 4px 9px;
+}
+.hp-tr.head {
+  font-size: 10.5px; color: var(--muted); font-weight: 600; text-transform: uppercase;
+  letter-spacing: .02em; border-bottom: 1px solid var(--border-soft); padding-bottom: 6px;
+  cursor: default;
+}
+.hp-th { cursor: pointer; user-select: none; }
+.hp-th:hover { color: var(--text); }
+.hp-th.active { color: var(--accent); }
+.hp-tr .hp-td { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
+.hp-tr .hp-td.name { font-weight: 550; }
+.hp-tr .hp-td.name .hp-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hp-tr .hp-td.addr { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.hp-tr .hp-td.label-col { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hp-tr .hp-td.labels { flex-wrap: wrap; gap: 3px; }
+.hp-tr .st { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex: none; }
+.hp-tr .st.connected { background: var(--green); }
+
+/*
+ * The row that says a list has stopped.
+ *
+ * Deliberately not a host row: it is a door, and it should not be possible
+ * to mistake it for the thirty-first machine.
+ */
+.sb-more {
+  display: flex; align-items: center; gap: 7px; cursor: pointer;
+  padding: 4px 10px 5px 20px; font-size: 11.5px; color: var(--muted);
+}
+.sb-more:hover { background: var(--panel-2); color: var(--text); }
+.sb-more .dots { font-size: 13px; letter-spacing: 1px; }
+.sb-more .name { font-variant-numeric: tabular-nums; }
+.sb-more .go { margin-left: auto; font-size: 10.5px; color: var(--accent); }
+
+
+/*
+ * Quick connect's recent servers, under the field rather than inside it.
+ *
+ * They wrap, because an address is as long as it is, and the row is capped
+ * so a long history cannot push the rest of the form off the dialog.
+ */
+.qc-recent {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+  margin: -4px 0 10px; max-height: 60px; overflow: auto;
+}
+.qc-recent .k {
+  font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--muted); margin-right: 2px;
+}
+.qc-recent .chip { font-family: var(--mono); font-size: 10.5px; cursor: pointer; }
+.qc-recent .chip:hover { background: var(--accent-dim); color: #fff; }
+/* Off to the side and quiet until wanted: it throws the list away. */
+.qc-recent .ghost-btn { margin-left: auto; opacity: .6; }
+.qc-recent .ghost-btn:hover { opacity: 1; }
+
+
+/* ------------------------------------------------------------------ */
+/* Requestable resource monitor                                        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A pane rather than a dialog: it reports on something that carries on in the
+ * background, so it must be possible to leave it up and keep working. It
+ * floats above the app, is dragged by its head, and remembers where it was
+ * put — below menus and toasts in the stack, because both of those are
+ * answers to something you just did and this is not.
+ */
+.rmon {
+  position: fixed; z-index: 150;
+  width: 340px; max-height: min(60vh, 520px);
+  display: flex; flex-direction: column;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); border-radius: 9px;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, .42);
+  overflow: hidden; font-size: 12px;
+}
+.rmon.flash { animation: rmonflash .4s ease; }
+@keyframes rmonflash { 50% { border-color: var(--accent); } }
+
+.rmon-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 7px 7px 11px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--panel-2); cursor: move; user-select: none;
+}
+.rmon-title { font-weight: 600; font-size: 12px; }
+
+.rmon-body { overflow: auto; padding: 4px 0; }
+.rmon-empty { padding: 14px 13px; color: var(--muted); }
+
+.rmon-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 7px 5px 11px;
+}
+.rmon-row:hover { background: var(--panel-2); }
+.rmon-row .icon-btn { opacity: 0; }
+.rmon-row:hover .icon-btn { opacity: 1; }
+.rmon-main { flex: 1; min-width: 0; }
+.rmon-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rmon-meta { font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rmon-row.gone .rmon-name { color: var(--red); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--red) 55%, transparent); }
+
+/* Confirmed, missing, or not yet asked — the three states, in one dot. */
+.rmon-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
+.rmon-dot.ok { background: var(--green); }
+.rmon-dot.bad { background: var(--red); }
+
+.rmon-state { font-size: 10.5px; color: var(--green); margin-top: 1px; }
+.rmon-state.bad { color: var(--red); }
+.rmon-state.unsure { color: var(--amber); }
+.rmon-dot.unsure { background: var(--amber); }
+.rmon-row.unsure .rmon-name { color: var(--amber); }
+.rmon-state .rmon-when-row { color: var(--muted); }
+.rmon-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+.rmon-tags .chip { font-size: 9.5px; padding: 0 4px; }
+/* A gone resource keeps its labels readable — they are what is left of it. */
+.rmon-row.gone .rmon-tags { opacity: .85; }
+
+.rmon-err {
+  margin: 5px 9px; padding: 6px 8px;
+  border-radius: 6px; font-size: 11px;
+  color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent);
+}
+
+.rmon-foot {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 9px; border-top: 1px solid var(--border-soft);
+  background: var(--panel-2);
+}
+.rmon-int { font-size: 11px; padding: 2px 4px; }
+.rmon-when { font-size: 10.5px; color: var(--muted); margin-left: auto; }
+
+
+/* ------------------------------------------------------------------ */
+/* rsync dialog                                                        */
+/* ------------------------------------------------------------------ */
+
+.rs-head { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
+.rs-row { display: flex; align-items: center; gap: 9px; margin-bottom: 7px; }
+.rs-lab { width: 108px; flex-shrink: 0; font-size: 12px; display: flex; flex-direction: column; gap: 1px; }
+.rs-side { font-size: 10.5px; color: var(--muted); }
+.rs-field { flex: 1; display: flex; gap: 5px; min-width: 0; }
+.rs-field .nt-in { flex: 1; min-width: 0; }
+.rs-boxes { display: flex; flex-direction: column; gap: 2px; margin: 9px 0; }
+/* The one that can empty a directory reads like it. */
+.rs-boxes .rs-danger span { color: var(--amber); }
+
+/*
+ * The command, verbatim. It is on screen because the dialog is asking you to
+ * approve an rsync, and an approval of something you cannot read is not one.
+ */
+.rs-cmd {
+  font-family: var(--mono); font-size: 10.5px; line-height: 1.5;
+  background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 6px;
+  padding: 7px 9px; margin: 9px 0 7px;
+  user-select: text; word-break: break-all; color: var(--text-dim);
+  max-height: 84px; overflow: auto;
+}
+.rs-out {
+  font-family: var(--mono); font-size: 11px; line-height: 1.45;
+  background: var(--bg); border: 1px solid var(--border-soft); border-radius: 6px;
+  padding: 8px 9px; margin: 0; height: 190px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word; user-select: text;
+}
+.rs-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; min-height: 26px; }
+.rs-run { font-size: 11.5px; color: var(--muted); }
+.rs-run.ok { color: var(--green); }
+.rs-run.bad { color: var(--red); }
+
+
+/* ------------------------------------------------------------------ */
+/* Dragging a pane                                                     */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The pane being carried, and the place it would land. Both are outlines
+ * rather than fills: a pane is mostly terminal, and a wash of colour over
+ * live output is harder to read than the output was.
+ */
+.pane.dragging { opacity: .55; }
+.pane.dropinto { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pane-head { cursor: grab; }
+.pane-head:active { cursor: grabbing; }
+.tab.dropinto { box-shadow: inset 0 -2px 0 var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+/* Past the last tab: where a new one would go. */
+.tabstrip.dropnew { box-shadow: inset -3px 0 0 var(--accent); }
+
+
+/*
+ * A field the cluster insists on. Amber rather than red: nothing has gone
+ * wrong yet — this is the dialog saying what it already knows will be
+ * refused, which is the one moment it can still be fixed cheaply.
+ */
+input.needed, textarea.needed {
+  border-color: color-mix(in srgb, var(--amber) 65%, var(--border));
+  background: color-mix(in srgb, var(--amber) 7%, transparent);
+}
+
+
+/*
+ * A role you can include or leave out, at the moment of asking. Off is the
+ * quieter state on purpose: a request for three roles when one would do is
+ * a request a reviewer has to think about.
+ */
+.chip.role-pick { cursor: pointer; user-select: none; }
+.chip.role-pick:not(.on) { opacity: .62; }
+.chip.role-pick:not(.on):hover { opacity: 1; }
+.chip.role-pick.on { outline: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+
+/*
+ * Flagging a requestable server as needing MFA before access even exists —
+ * same amber as the badge a known MFA host already wears (`.tag.mfa`), so
+ * the two read as the one fact wherever it shows up.
+ */
+.chip.mfa-pick { cursor: pointer; user-select: none; flex: none; align-self: flex-start; }
+.chip.mfa-pick:not(.on) { opacity: .5; }
+.chip.mfa-pick:not(.on):hover { opacity: 1; }
+.chip.mfa-pick.on {
+  background: color-mix(in srgb, var(--amber) 18%, transparent);
+  color: var(--amber); border-color: color-mix(in srgb, var(--amber) 55%, transparent);
+  font-weight: 600; opacity: 1;
+}
+
+/* The cluster's own words about why it wants a reason. */
+.req-prompt { margin: -4px 0 8px; padding-left: 2px; }
+.req-prompt .hint { color: var(--amber); }
+
+
+/* Adding a role the chips above do not have. */
+.role-more {
+  font-size: 10.5px; padding: 0 7px; height: 20px;
+  border-style: dashed; opacity: .8;
+}
+.role-more:hover { opacity: 1; border-style: solid; }
+
+/* ------------------------------------------------------------------ */
+/* The 3D view of an explorer (city3d.js)                              */
+/* ------------------------------------------------------------------ */
+
+.fpane-actions .fcity { width: auto; padding: 0 4px; font-size: 10px; font-weight: 700; letter-spacing: .02em; }
+.fpane-actions .fcity.active { color: var(--accent); }
+.fhead.c3-off { display: none; }
+
+.c3 {
+  position: relative; flex: 1; min-height: 160px; overflow: hidden; outline: none;
+  background: #0a1324; user-select: none;
+}
+.c3:focus-visible { box-shadow: inset 0 0 0 1px var(--accent-dim); }
+.c3-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* Over the canvas: small, translucent, out of the way of flying. */
+.c3-top {
+  position: absolute; left: 6px; right: 6px; top: 6px;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 6px;
+  pointer-events: none;
+}
+.c3-top > * { pointer-events: auto; }
+.c3-top-l { display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: flex-start; }
+.c3-top-r { display: flex; gap: 3px; flex-wrap: wrap; justify-content: flex-end; }
+.c3-where, .c3-measure {
+  background: rgba(12,16,24,.66); color: #e8edf5; border-radius: 5px;
+  padding: 3px 8px; font-size: 11.5px; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  backdrop-filter: blur(4px);
+}
+.c3-where { font-family: var(--mono); }
+.c3-measure:empty { display: none; }
+.c3-measure { font-size: 10.5px; color: #c4ccd8; }
+.c3-btn {
+  background: rgba(12,16,24,.66); color: #e8edf5; border: 1px solid rgba(255,255,255,.12);
+  border-radius: 5px; padding: 3px 8px; font-size: 11px; cursor: pointer; white-space: nowrap;
+  backdrop-filter: blur(4px);
+}
+.c3-btn:hover { background: rgba(40,60,100,.8); }
+
+.c3-legend {
+  position: absolute; left: 6px; bottom: 6px; right: 6px;
+  display: flex; flex-wrap: wrap; gap: 4px; pointer-events: none;
+}
+.c3-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: rgba(12,16,24,.62); color: #dfe5ee; border-radius: 10px;
+  padding: 2px 8px 2px 6px; font-size: 10.5px;
+}
+.c3-chip i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+.c3-tip {
+  position: absolute; z-index: 2; pointer-events: none; max-width: 260px;
+  background: rgba(12,16,24,.88); color: #e8edf5; border: 1px solid rgba(255,255,255,.1);
+  border-radius: 6px; padding: 6px 9px; font-size: 11.5px; box-shadow: 0 6px 18px rgba(0,0,0,.35);
+}
+.c3-tip-n { font-weight: 600; word-break: break-all; }
+.c3-tip-m { opacity: .85; margin-top: 2px; }
+.c3-tip-k { opacity: .75; margin-top: 2px; font-size: 10.5px; }
+.c3-tip-h { opacity: .55; margin-top: 4px; font-size: 10px; }
+
+/* Walking: a dot where Enter will reach. */
+.c3-cross {
+  position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px;
+  border-radius: 50%; background: rgba(255,255,255,.85); box-shadow: 0 0 0 1px rgba(0,0,0,.4);
+  pointer-events: none;
+}
+
+.c3-help {
+  position: absolute; right: 6px; top: 36px; z-index: 3; width: 270px;
+  background: rgba(12,16,24,.92); color: #e8edf5; border-radius: 8px;
+  padding: 10px 12px; font-size: 11.5px; border: 1px solid rgba(255,255,255,.1);
+}
+.c3-help-h { font-weight: 600; margin-bottom: 6px; }
+.c3-help-row { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
+.c3-help-row kbd {
+  font-family: var(--mono); font-size: 10.5px; background: rgba(255,255,255,.1);
+  border-radius: 3px; padding: 0 5px;
+}
+.c3-help-note { margin-top: 8px; opacity: .7; font-size: 10.5px; line-height: 1.4; }
+
+/* Fill the window: the whole explorer pane, toolbar and all, so search and the filter still work. */
+.fpane.c3-max {
+  position: fixed; inset: 0; z-index: 80; background: var(--panel);
+}
+
+/*
+ * A node kept out of the list by an assumed resource request (narrowed.js).
+ * Still there, just not reachable on this login — dimmed, not struck through.
+ */
+.sb-item.held { opacity: .55; }
+.sb-item .tag.held {
+  flex: none; max-width: none; padding: 0 4px; font-size: 9px; border-radius: 3px;
+  color: var(--text-dim); border: 1px dashed var(--border); white-space: nowrap;
+}
+.sb-narrowed {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 2px 8px 4px 22px; padding: 5px 8px; border-radius: 5px;
+  font-size: 11px; color: var(--text-dim);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.c3-style { max-width: 210px; appearance: auto; }
+.c3-style option, .c3-style optgroup { background: #1c2128; color: #e8edf5; }
+
+/* A recent multi-exec run's hosts, as chips under its command. */
+.mx-run-hosts { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+.mx-run-hosts .tag { font-size: 10.5px; }
+.mx-run-hosts .more { font-size: 10.5px; color: var(--muted); align-self: center; }
+
+/* VNet's badge on a cluster heading: green running, amber on its way, red if
+   tsh vnet exited on its own. Clickable, for its output. */
+.tag.vnet-on { color: var(--green); background: color-mix(in srgb, var(--green) 16%, transparent); cursor: pointer; }
+.tag.vnet-busy { color: var(--amber); background: color-mix(in srgb, var(--amber) 16%, transparent); cursor: pointer; }
+.tag.vnet-err { color: var(--red); background: color-mix(in srgb, var(--red) 16%, transparent); cursor: pointer; }
+
+/* The AI assistant panel, on the right of the window beside every tab. */
+#ai-panel { display: flex; flex-direction: column; min-width: 280px; background: var(--panel);
+  border-left: 1px solid var(--border); }
+#ai-panel.hidden, #ai-resizer.hidden { display: none; }
+#ai-panel .ai-head { display: flex; align-items: center; gap: 6px; padding: 5px 8px;
+  border-bottom: 1px solid var(--border-soft); min-height: 30px; }
+#ai-panel .ai-badge { font-size: 11px; font-weight: 600; color: var(--accent); letter-spacing: .03em; white-space: nowrap; }
+#ai-panel .ai-chips { display: flex; gap: 4px; overflow-x: auto; }
+#ai-panel .ai-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border-radius: 6px;
+  font-size: 12px; background: var(--panel-2); border: 1px solid var(--border-soft); cursor: pointer; white-space: nowrap; }
+#ai-panel .ai-chip.active { border-color: var(--accent); color: var(--text); }
+#ai-panel .ai-chip .x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 3px; }
+#ai-panel .ai-chip .x:hover { color: var(--red); }
+#ai-panel .ai-body { flex: 1; display: flex; min-height: 0; }
+#ai-panel .ai-body > .pane { flex: 1; min-width: 0; }
+#ai-panel .ai-body > .pane.hidden { display: none; }
+/* Esc, arrows and Enter along the foot, for answering an assistant's menus. */
+#ai-panel .ai-keys { display: flex; gap: 6px; padding: 5px 8px; border-top: 1px solid var(--border-soft); }
+#ai-panel .ai-keys > button { flex: 1; min-width: 0; }
+#ai-panel .ai-keys.hidden { display: none; }
+.tb-actions .ai-toggle { font-size: 14px; color: var(--accent); }
+.tb-actions .ai-toggle.active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+
+/* The readiness check for an AI assistant: one row per step. */
+.ai-check { display: flex; align-items: flex-start; gap: 10px; padding: 7px 2px; border-bottom: 1px solid var(--border-soft); }
+.ai-check .mark { width: 18px; text-align: center; font-weight: 700; flex-shrink: 0; }
+.ai-check.ok .mark { color: var(--green); }
+.ai-check.error .mark { color: var(--red); }
+.ai-check.warn .mark { color: var(--amber); }
+.ai-check.info .mark { color: var(--muted); }
+.ai-check .txt { flex: 1; min-width: 0; }
+.ai-check .l { font-size: 13px; }
+.ai-check .d { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; white-space: pre-wrap; }
+.ai-check code { display: inline-block; margin-top: 4px; font-size: 11px; padding: 1px 5px; background: var(--panel-2); border-radius: 4px; }
+
+/* "How it runs": a choice per row, the explanation beside it. */
+.ai-how { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.ai-how-row { display: flex; gap: 8px; align-items: baseline; font-size: 13px; cursor: pointer; }
+
+/* A watched host's kept record: label, value, copy. */
+.watch-profile { display: flex; flex-direction: column; gap: 2px; }
+.watch-profile .wp-row { display: grid; grid-template-columns: 130px 1fr auto; gap: 8px; align-items: center; }
+.watch-profile .wp-k { color: var(--muted); font-size: 12px; }
+.watch-profile .wp-v { font-size: 12px; font-family: var(--mono); word-break: break-all; user-select: text; }
+.watch-profile .wp-v.prose { font-family: inherit; word-break: normal; }
+
+/* Staged multi-exec: the plan, the Advanced settings, a run waiting between stages. */
+.mx-plan { font-size: 11.5px; color: var(--accent); margin: 2px 0 6px; }
+.mx-plan.hidden { display: none; }
+.mx-adv { margin: 2px 0 10px; font-size: 12px; }
+.mx-adv summary { cursor: pointer; color: var(--muted); font-size: 11.5px; }
+.mx-adv-row { display: flex; align-items: center; gap: 8px; margin: 6px 0 0 14px; flex-wrap: wrap; }
+.mx-adv .mx-num { width: 56px; }
+.mx-stage { font-size: 11px; padding: 1px 7px; border-radius: 9px; background: var(--panel-2); color: var(--accent); }
+.mx-paused {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;
+  padding: 8px 10px; border: 1px solid var(--accent-dim); border-radius: var(--radius); background: var(--panel-2);
+}
+.mx-paused.failed { border-color: var(--danger, #e5534b); }
+.mx-paused-text { flex: 1; min-width: 200px; font-size: 12px; }
+
+/* An assistant with a question waiting: yellow on its tab, the ✦ button and its sidebar row. */
+#ai-panel .ai-chip.waiting { background: color-mix(in srgb, var(--ai-ask) 22%, transparent); border-color: var(--ai-ask); color: var(--text); }
+#ai-panel .ai-chip.waiting .n::before { content: '? '; color: var(--ai-ask); font-weight: 700; }
+.icon-btn.ai-toggle.ai-waiting { color: var(--ai-ask); box-shadow: inset 0 0 0 1px var(--ai-ask); border-radius: 6px; }
+.tag.ai-waiting-tag { background: color-mix(in srgb, var(--ai-ask) 25%, transparent); color: var(--text); border-color: var(--ai-ask); }
+:root { --ai-ask: #f2cc3d; }
+:root[data-tone="light"] { --ai-ask: #b8860b; }
+
+/* Double-click on the AI row: which assistant, and what to ask it. */
+.ai-prompt-pick { width: 100%; }
+.ai-prompt-text { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; font-size: 13px;
+  padding: 7px 9px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); }
+.ai-prompt-text:focus { border-color: var(--accent); outline: none; }
+/* A pane with a look of its own fills itself in its colours, file browser and header included. */
+.pane[data-pane-tone] { background: var(--bg); color: var(--text); }
+
+/* Multi-exec: a command box that grows, a narrow run-as, and targets as a list. */
+.mx-form .mx-command {
+  flex: 1; min-height: 30px; resize: vertical; padding: 6px 10px; font-family: var(--mono); font-size: 12.5px;
+  line-height: 1.4; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius); outline: none;
+}
+.mx-form .mx-command:focus { border-color: var(--accent); }
+.mx-form { align-items: flex-start; }
+.mx-form input.mx-runas { flex: 0 0 96px; width: 96px; min-width: 0; }
+.mx-targets-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 4px; }
+.mx-targets-head .linkish { background: none; border: 0; color: var(--accent); cursor: pointer; font-size: 11px; padding: 0; }
+.mx-target-list { display: flex; flex-direction: column; gap: 1px; border: 1px solid var(--border-soft); border-radius: var(--radius); }
+.mx-target-list.many { max-height: 190px; overflow: auto; }
+.mx-target { display: flex; align-items: center; gap: 8px; padding: 2px 8px 2px 4px; font-size: 12px; min-width: 0; }
+.mx-target:nth-child(odd) { background: var(--panel); }
+.mx-target .x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 4px; }
+.mx-target .x:hover { color: var(--red); }
+.mx-target .n { color: var(--text); font-family: var(--mono); white-space: nowrap; }
+.mx-target .as { color: var(--accent); font-family: var(--mono); font-size: 11px; }
+.mx-target .as::before { content: 'as '; color: var(--muted); font-family: var(--sans); }
+.mx-target .cl { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.mx-target .tags { display: flex; gap: 4px; flex-wrap: wrap; min-width: 0; }
+.mx-target .tags .tag { font-size: 10.5px; padding: 0 5px; border-radius: 3px; background: var(--panel-2); color: var(--text-dim); border: 1px solid var(--border-soft); white-space: nowrap; }
+
+/* Saved AI responses */
+.ai-saved { display: grid; grid-template-columns: 240px 1fr; gap: 12px; height: min(60vh, 520px); }
+.ai-saved-list { overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+.ai-saved-row { padding: 6px 8px; cursor: pointer; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
+.ai-saved-row .t { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-saved-row:hover { background: var(--hover, rgba(127,127,127,.08)); }
+.ai-saved-row.active { background: var(--accent-bg, rgba(80,140,255,.15)); }
+.ai-saved-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ai-saved-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.ai-saved-view { flex: 1; overflow: auto; margin: 0; padding: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-word;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg-2, transparent); }
+@media (max-width: 640px) { .ai-saved { grid-template-columns: 1fr; height: auto; } }
+
+/* Search everything, top right */
+.tb-search { position: relative; -webkit-app-region: no-drag; margin-right: 6px; }
+#global-search { width: 220px; height: 24px; padding: 0 9px; border-radius: 6px; font-size: 12px;
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--text); transition: width .15s; }
+#global-search:focus { width: 320px; outline: none; border-color: var(--accent); }
+#global-search-results { position: absolute; right: 0; top: 30px; width: min(460px, 92vw); max-height: min(70vh, 560px);
+  overflow: auto; z-index: 3000; background: var(--panel, var(--bg)); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35); padding: 4px 0; }
+#global-search-results .gs-head { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 7px 10px 3px; }
+#global-search-results .gs-row { display: flex; gap: 10px; align-items: baseline; padding: 5px 10px; cursor: pointer; }
+#global-search-results .gs-row.active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+#global-search-results .gs-name { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 62%; }
+#global-search-results .gs-meta { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.search-flash { animation: search-flash 1.8s ease-out; border-radius: 6px; }
+@keyframes search-flash { 0%, 40% { background: color-mix(in srgb, var(--accent) 28%, transparent); } 100% { background: transparent; } }
+@media (max-width: 760px) { #global-search { width: 120px; } #global-search:focus { width: 200px; } }
+
+/* Recording a macro */
+.rec-badge { margin-left: 8px; padding: 1px 8px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--red) 60%, transparent);
+  background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); font-size: 11px; cursor: pointer; white-space: nowrap;
+  animation: rec-pulse 1.6s ease-in-out infinite; }
+.rec-badge:hover { background: color-mix(in srgb, var(--red) 26%, transparent); }
+@keyframes rec-pulse { 50% { opacity: .65; } }
+.rec-steps { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow: auto; margin-bottom: 10px; }
+.rec-step { display: flex; align-items: center; gap: 6px; }
+.rec-step .rec-n { font-size: 11px; color: var(--muted); min-width: 18px; text-align: right; }
+.rec-step .rec-cmd { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; }
+.rec-step.secret .rec-cmd { border-color: color-mix(in srgb, var(--red) 50%, var(--border)); }
+.rec-step .rec-warn { font-size: 10.5px; color: var(--red); white-space: nowrap; }
+.rec-step .rec-typed { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+
+/* Multi-exec: retries and schedules */
+.mx-rhead .st.retrying { background: var(--amber); }
+.mx-rbody .mx-try { color: var(--muted); }
+.mx-sched.off { opacity: .6; }
+
+/*
+ * Pane-close animations — see src/renderer/js/paneclose.js for the registry
+ * and the orchestration. The overlay sits above everything, is never a
+ * click target, and holds exactly one closing pane (plus its debris) at a
+ * time per animation; a second close while one is still playing gets its
+ * own pieces in the same layer without disturbing the first.
+ */
+.pane-close-layer { position: fixed; inset: 0; z-index: 9999; pointer-events: none; overflow: hidden; }
+.pane-closing { transform-origin: center center; will-change: transform, opacity, filter, clip-path; }
+.pane-close-frag { position: absolute; pointer-events: none; }
+
+.pane-close-crack {
+  position: absolute; pointer-events: none;
+  animation: pc-crack-fade 500ms ease-out forwards;
+}
+@keyframes pc-crack-fade { 0% { opacity: 0; } 15% { opacity: 1; } 70% { opacity: .8; } 100% { opacity: 0; } }
+
+.pane-close-dim-flash { animation: pc-dim-flash 220ms ease-out forwards; }
+@keyframes pc-dim-flash {
+  0% { filter: brightness(1); }
+  40% { filter: brightness(1.7) contrast(1.3); }
+  100% { filter: brightness(.3); opacity: .85; }
+}
+
+/* ---- single-piece effects: a class, a duration, done ---- */
+
+.pc-shrink-fade { animation: pc-shrink-fade var(--pc-duration, 500ms) ease-in forwards; }
+@keyframes pc-shrink-fade { to { transform: scale(0); opacity: 0; } }
+
+.pc-spin-fade { animation: pc-spin-fade var(--pc-duration, 600ms) ease-in forwards; }
+@keyframes pc-spin-fade { to { transform: scale(0) rotate(720deg); opacity: 0; } }
+
+.pc-drop { animation: pc-drop var(--pc-duration, 700ms) cubic-bezier(.4, 0, 1, 1) forwards; }
+@keyframes pc-drop { to { transform: translateY(170%) rotate(26deg); opacity: 0; } }
+
+.pc-launch { animation: pc-launch var(--pc-duration, 650ms) cubic-bezier(.2, 0, .4, 1) forwards; }
+@keyframes pc-launch { to { transform: translateY(-170%) rotate(-18deg); opacity: 0; } }
+
+.pc-slide-left { animation: pc-slide-left var(--pc-duration, 600ms) ease-in forwards; }
+@keyframes pc-slide-left { to { transform: translateX(-150%) rotate(-24deg); opacity: 0; } }
+
+.pc-slide-right { animation: pc-slide-right var(--pc-duration, 600ms) ease-in forwards; }
+@keyframes pc-slide-right { to { transform: translateX(150%) rotate(24deg); opacity: 0; } }
+
+.pc-iris { animation: pc-iris var(--pc-duration, 550ms) ease-in forwards; }
+@keyframes pc-iris { 0% { clip-path: circle(75% at 50% 50%); } to { clip-path: circle(0% at 50% 50%); } }
+
+.pc-iris-corner { animation: pc-iris-corner var(--pc-duration, 600ms) ease-in forwards; }
+@keyframes pc-iris-corner { 0% { clip-path: circle(100% at 100% 100%); } to { clip-path: circle(0% at 100% 100%); } }
+
+.pc-melt { transform-origin: center bottom; animation: pc-melt var(--pc-duration, 800ms) ease-in forwards; }
+@keyframes pc-melt {
+  0% { transform: scaleY(1) skewX(0); filter: blur(0); }
+  60% { transform: scaleY(.5) skewX(4deg); filter: blur(1px); }
+  100% { transform: scaleY(.04) skewX(9deg); filter: blur(5px); opacity: 0; }
+}
+
+.pc-vacuum { animation: pc-vacuum var(--pc-duration, 650ms) cubic-bezier(.6, 0, 1, 1) forwards; }
+@keyframes pc-vacuum { to { transform: scale(0) rotate(1080deg); opacity: 0; } }
+
+.pc-blackhole { animation: pc-blackhole var(--pc-duration, 750ms) ease-in forwards; }
+@keyframes pc-blackhole {
+  0% { border-radius: 0; filter: brightness(1); transform: scale(1) rotate(0); }
+  60% { border-radius: 50%; filter: brightness(.8); }
+  100% { border-radius: 50%; filter: brightness(0); transform: scale(0) rotate(360deg); opacity: 0; }
+}
+
+.pc-crt-off { animation: pc-crt-off var(--pc-duration, 550ms) ease-in forwards; }
+@keyframes pc-crt-off {
+  0% { transform: scaleY(1) scaleX(1); opacity: 1; filter: brightness(1); }
+  55% { transform: scaleY(.04) scaleX(1); opacity: 1; filter: brightness(1.8); }
+  100% { transform: scaleY(.04) scaleX(0); opacity: 0; filter: brightness(2.5); }
+}
+
+.pc-glitch { animation: pc-glitch var(--pc-duration, 600ms) linear forwards; }
+@keyframes pc-glitch {
+  0% { transform: translateX(0); filter: hue-rotate(0); opacity: 1; }
+  10% { transform: translateX(-6px); filter: hue-rotate(80deg); }
+  20% { transform: translateX(5px); filter: hue-rotate(-80deg); }
+  32% { transform: translateX(-9px); opacity: .7; }
+  44% { transform: translateX(4px); opacity: 1; }
+  58% { transform: translateX(-3px); opacity: .4; }
+  72% { transform: translateX(6px); opacity: .8; }
+  100% { transform: translateX(14px) scale(.92); opacity: 0; filter: hue-rotate(180deg); }
+}
+
+.pc-static { animation: pc-static var(--pc-duration, 550ms) linear forwards; }
+@keyframes pc-static {
+  0% { opacity: 1; filter: contrast(1) brightness(1); }
+  12% { opacity: .2; }
+  22% { opacity: 1; }
+  34% { opacity: .3; filter: contrast(2) brightness(1.2); }
+  46% { opacity: .9; }
+  60% { opacity: .35; }
+  74% { opacity: .75; }
+  100% { opacity: 0; filter: contrast(3) brightness(2); }
+}
+
+.pc-overexpose { animation: pc-overexpose var(--pc-duration, 500ms) ease-in forwards; }
+@keyframes pc-overexpose {
+  0% { filter: brightness(1) saturate(1); }
+  40% { filter: brightness(2.2) contrast(1.2); }
+  100% { filter: brightness(4) saturate(0); opacity: 0; transform: scale(1.06); }
+}
+
+.pc-rust { animation: pc-rust var(--pc-duration, 900ms) ease-in forwards; }
+@keyframes pc-rust { to { filter: sepia(1) contrast(1.4) brightness(.5) saturate(1.5); opacity: 0; transform: scale(.96); } }
+
+.pc-freeze { animation: pc-freeze var(--pc-duration, 700ms) ease-in forwards; }
+@keyframes pc-freeze {
+  0% { filter: saturate(1) brightness(1); transform: scale(1); }
+  60% { filter: saturate(.2) brightness(1.5); transform: scale(.97); }
+  82% { filter: saturate(.1) brightness(2.2) contrast(1.4); }
+  100% { opacity: 0; transform: scale(.9); filter: saturate(0) brightness(2.6); }
+}
+
+.pc-fold-top { transform-origin: top center; animation: pc-fold-top var(--pc-duration, 600ms) ease-in forwards; }
+@keyframes pc-fold-top { to { transform: perspective(700px) rotateX(-100deg) translateY(-8%); opacity: 0; } }
+
+.pc-fold-bottom { transform-origin: bottom center; animation: pc-fold-bottom var(--pc-duration, 650ms) ease-in forwards; }
+@keyframes pc-fold-bottom { to { transform: perspective(700px) rotateX(100deg) translateY(8%); opacity: 0; } }
+
+.pc-book-close { transform-origin: left center; animation: pc-book-close var(--pc-duration, 600ms) ease-in forwards; }
+@keyframes pc-book-close { to { transform: perspective(900px) rotateY(100deg); opacity: 0; } }
+
+.pc-warp { animation: pc-warp var(--pc-duration, 550ms) ease-in forwards; }
+@keyframes pc-warp { to { transform: scale(2.6); filter: blur(14px); opacity: 0; } }
+
+.pc-implode { animation: pc-implode var(--pc-duration, 450ms) ease-in forwards; }
+@keyframes pc-implode {
+  0% { filter: brightness(1); transform: scale(1); }
+  15% { filter: brightness(2.4); transform: scale(1.05); }
+  100% { transform: scale(0); opacity: 0; filter: brightness(.5); }
+}
+
+.pc-sink { transform-origin: bottom center; animation: pc-sink var(--pc-duration, 700ms) ease-in forwards; }
+@keyframes pc-sink { to { transform: translateY(35%) scaleY(.25); filter: brightness(.5); opacity: 0; } }
+
+.pc-tumble { animation: pc-tumble var(--pc-duration, 700ms) ease-in forwards; }
+@keyframes pc-tumble {
+  0% { transform: rotate(0) scale(1) scaleY(1); }
+  50% { transform: rotate(270deg) scale(.5) scaleY(.7); }
+  100% { transform: rotate(540deg) scale(0) scaleY(.7); opacity: 0; }
+}
+
+.pc-wilt { transform-origin: top center; animation: pc-wilt var(--pc-duration, 900ms) ease-in forwards; }
+@keyframes pc-wilt { to { transform: rotate(14deg) translateY(50%) scaleY(.4); opacity: 0; } }
+
+.pc-drain { transform-origin: bottom center; animation: pc-drain var(--pc-duration, 650ms) ease-in forwards; }
+@keyframes pc-drain { to { transform: scaleY(0); filter: brightness(.6); opacity: 0; } }
+
+.pc-levitate { animation: pc-levitate var(--pc-duration, 650ms) ease-in forwards; }
+@keyframes pc-levitate {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  40% { transform: translateY(-16%) scale(1.03); opacity: 1; }
+  100% { transform: translateY(-42%) scale(.2); opacity: 0; }
+}
+
+.pc-page-turn { transform-origin: right center; animation: pc-page-turn var(--pc-duration, 600ms) ease-in forwards; }
+@keyframes pc-page-turn { to { transform: perspective(900px) rotateY(-100deg) translateX(-8%); opacity: 0; } }
+
+.pc-jelly { animation: pc-jelly var(--pc-duration, 650ms) ease-in forwards; }
+@keyframes pc-jelly {
+  0% { transform: scale(1, 1); }
+  30% { transform: scale(1.15, .85); }
+  50% { transform: scale(.85, 1.15); }
+  70% { transform: scale(1.05, .95); }
+  100% { transform: scale(0, 0); opacity: 0; }
+}
+
+.pc-corner-twist { animation: pc-corner-twist var(--pc-duration, 600ms) ease-in forwards; }
+@keyframes pc-corner-twist { to { transform: scale(0) rotate(300deg) translate(20%, 20%); opacity: 0; } }
+
+/* ---- travel effects: a target point via --pc-tx/--pc-ty ---- */
+
+.pc-toss-trash { animation: pc-toss-trash var(--pc-duration, 900ms) cubic-bezier(.4, 0, .7, 1) forwards; }
+@keyframes pc-toss-trash {
+  0% { transform: translate(0, 0) scale(1) rotate(0); opacity: 1; }
+  55% { transform: translate(calc(var(--pc-tx) * .55), calc(var(--pc-ty) * .4)) scale(.55) rotate(-220deg); opacity: 1; }
+  100% { transform: translate(var(--pc-tx), var(--pc-ty)) scale(.04) rotate(-560deg); opacity: 0; }
+}
+
+.pc-spiral-drain { animation: pc-spiral-drain var(--pc-duration, 800ms) ease-in forwards; }
+@keyframes pc-spiral-drain {
+  0% { transform: translate(0, 0) rotate(0) scale(1); }
+  70% { transform: translate(calc(var(--pc-tx) * .6), calc(var(--pc-ty) * .5)) rotate(540deg) scale(.4); }
+  100% { transform: translate(var(--pc-tx), var(--pc-ty)) rotate(1080deg) scale(0); opacity: 0; }
+}
+
+.pc-fly-corner { animation: pc-fly-corner var(--pc-duration, 750ms) cubic-bezier(.3, 0, .6, 1) forwards; }
+@keyframes pc-fly-corner {
+  0% { transform: translate(0, 0) scale(1) rotate(0); opacity: 1; }
+  100% { transform: translate(var(--pc-tx), var(--pc-ty)) scale(.08) rotate(260deg); opacity: 0; }
+}
+
+.pc-crumble-core { animation: pc-crumble-core var(--pc-duration, 950ms) ease-in forwards; }
+@keyframes pc-crumble-core {
+  0% { transform: translate(0, 0) scale(1); filter: brightness(1); opacity: 1; }
+  50% { transform: translate(calc(var(--pc-tx) * .3), calc(var(--pc-ty) * .2)) scale(.8); filter: brightness(.85); }
+  100% { transform: translate(var(--pc-tx), var(--pc-ty)) scale(.05) rotate(-300deg); filter: brightness(.5); opacity: 0; }
+}
+
+/* ---- fragments: shatter, crumble, shred, confetti, ash ---- */
+
+.pane-close-shard { position: absolute; pointer-events: none; opacity: 1; }
+@keyframes pc-shard-fall { to { transform: translate(var(--pc-fx), var(--pc-fy)) rotate(var(--pc-frot)); opacity: 0; } }
+
+.pane-close-crumb { position: absolute; pointer-events: none; border-radius: 1px; opacity: .9; }
+@keyframes pc-crumb-fall { to { transform: translate(var(--pc-fx), var(--pc-fy)) rotate(var(--pc-frot)); opacity: 0; } }
+
+.pane-close-shred { position: absolute; pointer-events: none; }
+@keyframes pc-shred-fall { to { transform: translateY(var(--pc-fy)) rotate(var(--pc-frot)); opacity: 0; } }
+
+.pane-close-confetti { position: absolute; pointer-events: none; }
+@keyframes pc-confetti-fly { to { transform: translate(var(--pc-fx), var(--pc-fy)) rotate(var(--pc-frot)); opacity: 0; } }
+
+.pc-ash-base { animation: pc-ash-base-fade var(--pc-duration, 900ms) ease-out forwards; }
+@keyframes pc-ash-base-fade {
+  0% { opacity: 1; filter: brightness(1); }
+  60% { opacity: .5; filter: brightness(1.3); }
+  100% { opacity: 0; filter: brightness(1.6) blur(2px); }
+}
+.pane-close-ash { position: absolute; pointer-events: none; border-radius: 50%; }
+@keyframes pc-ash-rise { to { transform: translate(var(--pc-fx), var(--pc-fy)); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pane-close-layer { display: none; }
+}
+
+.mx-sched-preview { margin-top: 8px; font-size: 12px; color: var(--accent); }
+
+/* KubeLife's full-cluster browser (kubebrowser.js) */
+.kube-browser { display: flex; gap: 10px; height: 64vh; }
+.kube-browser-nav { width: 220px; flex: none; overflow-y: auto; border-right: 1px solid var(--border-soft); padding-right: 8px; }
+.kube-browser-main { flex: 1; overflow-y: auto; min-width: 0; }
+.kube-row {
+  /* Column widths are no longer declared here — renderTable() in
+     kubebrowser.js sets grid-template-columns inline, per table id, so the
+     same row shape can be resized and so two tables with a different
+     number of columns (the resource browser vs. the Helm releases list)
+     each get their own correct template instead of sharing one guess. */
+  display: grid; gap: 8px; padding: 4px 6px; align-items: center; font-size: 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.kube-row.kube-head { font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border); }
+.kube-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kube-row-actions { display: flex; gap: 4px; white-space: nowrap; }
+/* Flex items shrink by default, and Describe — the longest label — was the
+   one that lost its last letter when a row had more than three buttons. */
+.kube-row-actions > button { flex-shrink: 0; }
+.kube-stat { display: flex; align-items: center; font-size: 12px; }
+
+/* Sortable + resizable column headers — renderTable()'s own cells. */
+.kube-th { display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; overflow: visible; }
+.kube-th .arrow { font-size: 9px; color: var(--accent); flex: none; }
+.kube-th-resizer {
+  position: absolute; right: -5px; top: 0; bottom: 0; width: 10px; cursor: col-resize; z-index: 2;
+}
+.kube-th-resizer:hover, .kube-th-resizer.active { background: var(--accent); opacity: .4; }
+
+/* A kind's own star in the cluster browser's kinds list: there on hover, kept when on. */
+.kube-browser-nav .kind-star { margin-left: auto; padding: 0 4px; color: var(--muted); visibility: hidden; cursor: pointer; }
+.kube-browser-nav .sb-item:hover .kind-star { visibility: visible; }
+.kube-browser-nav .kind-star.on { visibility: visible; color: var(--amber); }
+.kube-browser-nav .kind-star:hover { color: var(--amber); }
+
+/* A connected SSH host with no Teleport agent: the way to enroll it, in the accent colour. */
+.tag.teleport-offer { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.tag.teleport-offer:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+
+/* The pane header's Teleport button, on a session whose host has no agent yet. */
+.pane-head .pteleport { color: var(--accent); font-weight: 700; }
+.pane-head .pteleport:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }

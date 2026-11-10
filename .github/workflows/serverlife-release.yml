@@ -1,0 +1,255 @@
+name: ServerLife release
+
+# Tags are prefixed `serverlife-v` so a tag says what it is releasing.
+#
+# Each platform is built on its own runner. Cross-compiling Electron apps from
+# a single host is possible but fragile (wine for Windows, docker for Linux);
+# building natively avoids all of it.
+
+on:
+  push:
+    tags: ['serverlife-v*']
+  workflow_dispatch:
+    inputs:
+      teleport_version:
+        description: 'Run the integration tests against this Teleport version only, client and cluster alike (e.g. 18.11.3). Empty: the two newest majors, matched and mismatched.'
+        required: false
+
+permissions:
+  contents: write
+
+env:
+  # Extra electron-builder flags; the macOS signing step may add to this.
+  EB_EXTRA: ''
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    needs: release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Apple Silicon)
+            # macos-14 was retired: its jobs are cancelled before they start
+            # ("configuration 'macos-14-arm64-us-default' is not supported").
+            os: macos-15
+            args: --mac --arm64
+          # The targets are named here, not left to package.json: there each one
+          # lists both architectures (so `make dist-linux` builds both), and
+          # that list outranks a bare --x64/--arm64. Both runners then built
+          # both, raced to upload the same names, and an arm64 package could
+          # come from the x64 runner with an x64 terminal module inside it.
+          - name: Linux x64
+            os: ubuntu-latest
+            args: --linux AppImage deb tar.gz --x64
+          - name: Linux arm64
+            os: ubuntu-24.04-arm
+            args: --linux AppImage deb tar.gz --arm64
+          - name: Windows x64
+            os: windows-latest
+            args: --win --x64
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native modules for Electron
+        run: npx electron-rebuild -f -w node-pty
+
+      - name: Build renderer and icon
+        run: |
+          node build.mjs
+          node tools/make-icon.mjs
+
+      # Signing and notarisation are opt-in. The variables have to be *absent*
+      # rather than empty: electron-builder treats an empty CSC_LINK as a
+      # certificate path and fails resolving it, so only export them when the
+      # secrets are actually configured.
+      - name: Configure macOS signing
+        if: runner.os == 'macOS'
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$MAC_CERT_P12" ]; then
+            echo "CSC_LINK=$MAC_CERT_P12" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$MAC_CERT_PASSWORD" >> "$GITHUB_ENV"
+            echo "APPLE_ID=$APPLE_ID" >> "$GITHUB_ENV"
+            echo "APPLE_APP_SPECIFIC_PASSWORD=$APPLE_APP_PASSWORD" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> "$GITHUB_ENV"
+            echo "Signing enabled."
+          else
+            # Without an identity electron-builder leaves Electron's own stale
+            # linker signature in place, which Apple Silicon refuses to launch.
+            # Ad-hoc signing produces a bundle that passes `codesign --verify`;
+            # users still clear quarantine by hand, but the app runs.
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "EB_EXTRA=-c.mac.identity=-" >> "$GITHUB_ENV"
+            echo "No signing certificate configured — ad-hoc signing."
+          fi
+
+      - name: Package
+        run: npx electron-builder ${{ matrix.args }} $EB_EXTRA --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Each job uploads its own builds straight to the release. They used to be
+      # parked as artifacts for a final job to collect, which meant a second
+      # copy of every build (~1.9 GB a run) held against the Actions storage
+      # quota — and when that quota filled, the upload failed and a release
+      # whose builds had all succeeded shipped nothing. Release assets are a
+      # separate store, so this path cannot be blocked the same way.
+      - name: Publish builds to the release
+        if: startsWith(github.ref, 'refs/tags/serverlife-v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s nullglob
+          files=(release/*.dmg release/*.zip release/*.AppImage release/*.deb release/*.tar.gz release/*.exe)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No build output to publish." >&2
+            exit 1
+          fi
+          printf 'uploading: %s\n' "${files[@]}"
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+
+  # Which Teleport releases the integration tests run against: the latest patch
+  # on each of the two newest majors, read from Teleport's apt repository (see
+  # tests/integration/teleport-versions.sh for why not GitHub releases). When
+  # a new major ships the pair moves up with it, nothing to edit here.
+  #
+  # Each major against its own tsh, and both mismatches: people run a tsh a
+  # major ahead of a cluster (tsh warns once at login, then goes quiet) or a
+  # major behind (supported). Both have broken things the matched pairs never
+  # would — tsh 17's remote-to-remote scp wrote to the local disk.
+  teleport-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      pairs: ${{ steps.pick.outputs.pairs }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: pick
+        env:
+          REQUESTED: ${{ inputs.teleport_version }}
+        run: |
+          if [ -n "$REQUESTED" ]; then
+            v="${REQUESTED#v}"
+            pairs=$(jq -cn --arg v "$v" '[{cluster: $v, client: $v}]')
+          else
+            vs=$(tests/integration/teleport-versions.sh)
+            new=$(sed -n 1p <<<"$vs"); old=$(sed -n 2p <<<"$vs"); old=${old:-$new}
+            pairs=$(jq -cn --arg n "$new" --arg o "$old" \
+              '[{cluster:$n,client:$n},{cluster:$o,client:$o},{cluster:$o,client:$n},{cluster:$n,client:$o}] | unique')
+          fi
+          echo "Cluster / tsh pairs under test:"; jq -r '.[] | "  Teleport \(.cluster) / tsh \(.client)"' <<<"$pairs"
+          echo "pairs=$pairs" >> "$GITHUB_OUTPUT"
+
+  # ServerLife's connection, file, sync, tmux and tsh code against a real
+  # OpenSSH host and a real Teleport cluster, once per pair above. The unit
+  # tests cannot see any of this: each depends on what a server actually does.
+  # A failure here stops the release before it exists.
+  integration:
+    name: Integration (Teleport ${{ matrix.pair.cluster }} / tsh ${{ matrix.pair.client }})
+    needs: teleport-versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        pair: ${{ fromJSON(needs.teleport-versions.outputs.pairs) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: OpenSSH and Teleport ${{ matrix.pair.cluster }}, tsh ${{ matrix.pair.client }}
+        run: make test-integration TELEPORT_VERSION=${{ matrix.pair.cluster }} TELEPORT_CLIENT_VERSION=${{ matrix.pair.client }}
+
+  # The release has to exist before the matrix can upload into it, and its notes
+  # come from the changelog rather than from generated commit summaries.
+  release:
+    needs: integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      # Before anything is published. The tests need only esbuild, which is
+      # already a dependency, and they take about a second — cheap insurance
+      # against releasing a filter that matches the wrong hosts.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      # The rules Teleport lints its own web code with (.oxlintrc.jsonc). An
+      # error here stops the release before it exists, and so before any of the
+      # platform builds that wait on it.
+      - name: Lint
+        run: make lint
+      - name: Unit tests
+        run: make test
+      - name: Create the release if it is not there yet
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "Not a tag — building without publishing."
+            exit 0
+          fi
+          VERSION=$(node -p "require('./package.json').version")
+          # A tag that disagrees with package.json produces a release whose
+          # assets are named for a different version — catch it here.
+          if [ "$GITHUB_REF_NAME" != "serverlife-v$VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json ($VERSION)." >&2
+            exit 1
+          fi
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists."
+          else
+            # Notes for this version only. Passing the whole changelog put the
+            # download list — the reason most people open a release page — below
+            # every version ever shipped.
+            node tools/release-notes.mjs "$VERSION" > /tmp/notes.md
+            cat /tmp/notes.md
+            gh release create "$GITHUB_REF_NAME" \
+              --title "ServerLife $VERSION" \
+              --notes-file /tmp/notes.md
+          fi
+          # The macOS installer helper ships with the release, so nobody has to
+          # clone the repository to get past Gatekeeper.
+          gh release upload "$GITHUB_REF_NAME" tools/install-mac.sh --clobber
+
+  # Sums are computed from what is actually published, so they describe the
+  # files people download rather than a copy of them.
+  checksums:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/serverlife-v')
+    steps:
+      - name: Checksums of the published assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir sums && cd sums
+          gh release download "$GITHUB_REF_NAME" --pattern '*' --skip-existing
+          rm -f SHA256SUMS.txt
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          gh release upload "$GITHUB_REF_NAME" SHA256SUMS.txt --clobber

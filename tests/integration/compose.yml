@@ -1,0 +1,82 @@
+# ServerLife integration stack — see README.md beside this file.
+#
+#   TELEPORT_VERSION=18.11.3 docker compose -f tests/integration/compose.yml run --build --rm runner
+#
+# `make test-integration` does that and tears the stack down afterwards.
+# TELEPORT_CLIENT_VERSION gives the runner a different tsh from the cluster's.
+
+name: serverlife-it
+
+x-image: &image
+  image: serverlife-it:${TELEPORT_VERSION:?set TELEPORT_VERSION (tests/integration/teleport-versions.sh lists the current ones)}
+  build:
+    context: .
+    args:
+      TELEPORT_VERSION: ${TELEPORT_VERSION}
+
+services:
+  # Certificates and keys, made fresh every run and shared through a volume.
+  setup:
+    <<: *image
+    command: ["bash", "/it/setup.sh"]
+    volumes:
+      - ./:/it:ro
+      - shared:/shared
+
+  proxy:
+    <<: *image
+    hostname: proxy
+    command: ["bash", "/it/proxy.sh"]
+    environment:
+      SSL_CERT_FILE: /shared/ca.crt
+      # A test cluster with no second factor, so tsh can log in unattended.
+      # Teleport refuses `second_factor: off` without it.
+      TELEPORT_ALLOW_NO_SECOND_FACTOR: "true"
+    volumes:
+      - ./:/it:ro
+      - shared:/shared
+    depends_on:
+      setup: { condition: service_completed_successfully }
+
+  # Both kinds of target on one machine: sshd for the plain-OpenSSH tests,
+  # a Teleport agent (reverse tunnel) for the cluster tests.
+  node:
+    <<: *image
+    hostname: node1
+    command: ["bash", "/it/node.sh"]
+    environment:
+      SSL_CERT_FILE: /shared/ca.crt
+    volumes:
+      - ./:/it:ro
+      - shared:/shared
+    depends_on:
+      setup: { condition: service_completed_successfully }
+
+  runner:
+    # Its own image when the client is meant to differ from the cluster.
+    image: serverlife-it:${TELEPORT_CLIENT_VERSION:-${TELEPORT_VERSION}}
+    build:
+      context: .
+      args:
+        TELEPORT_VERSION: ${TELEPORT_CLIENT_VERSION:-${TELEPORT_VERSION}}
+    command: ["bash", "/app/tests/integration/runner.sh"]
+    working_dir: /app
+    environment:
+      SSL_CERT_FILE: /shared/ca.crt
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      # The cluster's version; the client's is TELEPORT_VERSION in the image.
+      IT_CLUSTER_VERSION: ${TELEPORT_VERSION}
+      # Passed on by the workflow; empty locally.
+      CI: ${CI:-}
+    volumes:
+      - ../../:/app
+      # Linux modules, built here, never mixed with a macOS checkout's own.
+      - runner_modules:/app/node_modules
+      - shared:/shared
+    depends_on:
+      proxy: { condition: service_started }
+      node: { condition: service_started }
+
+volumes:
+  shared:
+  runner_modules:

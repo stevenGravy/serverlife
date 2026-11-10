@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Packaged output
+release/
+dist/
+
+# Generated at build time — `make build` recreates these
+src/renderer/app.js
+src/renderer/app.js.map
+src/renderer/vendor/
+build/icon.png
+
+# Local state and editor noise
+.claude/settings.json
+.claude/settings.local.json
+*.log
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Anything a contributor drops in while testing
+/tmp/
+*.local

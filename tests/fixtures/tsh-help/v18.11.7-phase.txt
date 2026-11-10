@@ -1,0 +1,152 @@
+tsh: error: expected command but got "phase"
+Usage: tsh [<flags>] <command> [<args> ...]
+
+Teleport Command Line Client.
+
+Flags:
+  -l, --login=LOGIN              Remote host login. ($TELEPORT_LOGIN)
+      --proxy=PROXY              Teleport proxy address. ($TELEPORT_PROXY)
+      --relay=RELAY              Teleport relay address, "none" to explicitly
+                                 disable the use of a relay, or "default" to
+                                 use the cluster-provided address even if a
+                                 different address was specified at login time.
+                                 ($TELEPORT_RELAY)
+      --user=USER                Teleport user, defaults to current local user.
+                                 ($TELEPORT_USER)
+      --ttl=TTL                  Minutes to live for a session.
+  -i, --identity=IDENTITY        Identity file. ($TELEPORT_IDENTITY_FILE)
+      --cert-format=CERT-FORMAT  SSH certificate format.
+      --[no-]insecure            Do not verify server's certificate and host
+                                 name. Use only in test environments.
+      --auth=AUTH                Specify the name of authentication connector to
+                                 use. ($TELEPORT_AUTH)
+      --[no-]skip-version-check  Skip version checking between server and
+                                 client.
+  -d, --[no-]debug               Verbose logging to stdout.
+      --[no-]os-log              Verbose logging to the unified logging
+                                 system. This flag implies --debug.
+                                 Also available through the
+                                 TELEPORT_OS_LOG env var. More details see
+                                 https://goteleport.com/docs/connect-your-client/tsh/#debug-logs.
+  -k, --add-keys-to-agent="auto"  
+                                 Controls how keys are handled.
+                                 Valid values are [auto no yes only].
+                                 ($TELEPORT_ADD_KEYS_TO_AGENT)
+      --[no-]enable-escape-sequences  
+                                 Enable support for SSH escape sequences. Type
+                                 '~?' during an SSH session to list supported
+                                 sequences. Default is enabled.
+      --bind-addr=BIND-ADDR      Override host:port used when opening a browser
+                                 for cluster logins. ($TELEPORT_LOGIN_BIND_ADDR)
+      --callback=CALLBACK        Override the base URL (host:port) of the
+                                 link shown when opening a browser for cluster
+                                 logins. Must be used with --bind-addr.
+      --mfa-mode=auto            Preferred mode for MFA and Passwordless
+                                 assertions (auto, cross-platform, platform,
+                                 otp, sso, browser). ($TELEPORT_MFA_MODE) (one
+                                 of: auto, cross-platform, platform, otp, sso,
+                                 browser)
+      --[no-]headless            Use headless login. Shorthand for
+                                 --auth=headless. ($TELEPORT_HEADLESS)
+      --mlock="auto"             Determines whether process memory will be
+                                 locked and whether failure to do so will be
+                                 accepted (off, auto, best_effort, strict).
+                                 ($TELEPORT_MLOCK_MODE)
+      --piv-slot=PIV-SLOT        Specify a PIV slot key to use for Hardware
+                                 Key support instead of the default. Ex: "9d".
+                                 ($TELEPORT_PIV_SLOT)
+  -J, --jumphost=JUMPHOST        SSH jumphost.
+
+Commands:
+  help                           Show help.
+  version                        Print the tsh client and Proxy server versions for the current context.
+  ssh                            Run shell or execute a command on a remote SSH node.
+  resolve                        Resolves an SSH host.
+  aws                            Access AWS API.
+  aws-profile                    Generate AWS config profiles by syncing with your integrated AWS IAM Identity Center account(s). Other profiles in the config file are left untouched.
+  az                             Access Azure API.
+  gcloud                         Access GCP API with the gcloud command.
+  gsutil                         Access Google Cloud Storage with the gsutil command.
+  apps ls                        List available applications.
+  apps login                     Retrieve short-lived certificate for an app.
+  apps logout                    Remove app certificate.
+  apps config                    Print app connection information.
+  apps logins                    List available logins for a Cloud console application.
+  recordings ls                  List recorded sessions.
+  recordings export              Export recorded desktop sessions to video.
+  proxy ssh                      Start local TLS proxy for ssh connections when using Teleport in single-port mode.
+  proxy db                       Start local TLS proxy for database connections when using Teleport in single-port mode.
+  proxy app                      Start local TLS proxy for app connection when using Teleport in single-port mode.
+  proxy mcp                      Start local proxy for MCP access.
+  proxy aws                      Start local proxy for AWS access.
+  proxy azure                    Start local proxy for Azure access.
+  proxy gcloud                   Start local proxy for GCP access.
+  proxy kube                     Start local proxy for Kubernetes access.
+  db ls                          List all available databases.
+  db login                       Retrieve credentials for a database.
+  db logout                      Remove database credentials.
+  db env                         Print environment variables for the configured database.
+  db config                      Print database connection information. Useful when configuring GUI clients.
+  db connect                     Connect to a database.
+  db exec                        Execute database commands on target database services.
+  join                           Join the active SSH or Kubernetes session.
+  play                           Replay the recorded session (SSH, Kubernetes, App, DB).
+  scp                            Transfer files to a remote SSH node.
+  ls                             List remote SSH nodes.
+  clusters                       List available Teleport clusters.
+  sessions ls                    List active sessions.
+  login                          Log in to a cluster and retrieve the session certificate.
+  logout                         Delete a cluster certificate.
+  latency ssh                    Measure latency to a particular SSH host.
+  status                         Display the list of proxy servers and retrieved certificates.
+  env                            Print commands to set Teleport session environment variables.
+  delegation create-session      Create a delegation session, allowing a bot or workload to temporarily act on your behalf.
+  request ls                     List access requests.
+  request show                   Show request details.
+  request create                 Create a new access request.
+  request review                 Review an access request.
+  request search                 Search for resources to request access to.
+  request drop                   Drop one or more access requests from current identity.
+  headless approve               Approve a headless authentication request.
+  kubectl                        Runs a kubectl command on a Kubernetes cluster.
+  kube ls                        Get a list of Kubernetes clusters.
+  kube login                     Login to a Kubernetes cluster.
+  kube sessions                  Get a list of active Kubernetes sessions. (DEPRECATED: use tsh sessions ls --kind=kube instead.)
+  kube exec                      Execute a command in a Kubernetes pod.
+  kube join                      Join an active Kubernetes session.
+  mfa ls                         Get a list of registered MFA devices.
+  mfa add                        Add a new MFA device.
+  mfa rm                         Remove a MFA device.
+  scan keys                      Scan the local machine for SSH private keys and report findings to Teleport.
+  scopes ls                      List scopes at which user has assigned privileges.
+  config                         Print OpenSSH configuration details.
+  update                         Update client tools (tsh, tctl) to the latest version defined by the cluster configuration.
+  device enroll                  Enroll this device as a trusted device. Requires Teleport Enterprise.
+  svid issue                     Issue a SPIFFE SVID using Teleport Workload Identity and write it to a local directory.
+  workload-identity issue-x509   Use Teleport Workload Identity to issue an X509 credential and write it to a local directory.
+  workload-identity issue-jwt    Use Teleport Workload Identity to issue a JWT credential and write it to a local directory.
+  vnet                           Start Teleport VNet, a virtual network for TCP application access.
+  vnet-ssh-autoconfig            Automatically include VNet's generated OpenSSH-compatible config file in ~/.ssh/config.
+  git login                      Opens a browser and retrieves your login from GitHub.
+  git ls                         List Git servers.
+  git config                     Check Teleport config on the working Git directory. Or provide an action ('update' or 'reset') to configure the Git repo.
+  git clone                      Clone a Git repository.
+  beams ls                       List beam instances.
+  beams add                      Start a new beam, and optionally connect to it via SSH.
+  beams rm                       Delete a beam.
+  beams ssh                      Start an interactive shell in a beam, via SSH.
+  beams exec                     Run a command in a beam, via SSH.
+  beams publish                  Publish an HTTP or TCP service running in a beam.
+  beams unpublish                Unpublish a previously published service in a beam.
+  beams scp                      Copy files between a beam and the local filesystem.
+  piv agent                      Start PIV key agent.
+  mcp db config                  Print client configuration details.
+  mcp ls                         List available MCP server applications.
+  mcp config                     Print client configuration details.
+  mcp login                      Log in to an OAuth-protected MCP server.
+  mcp logout                     Remove stored OAuth credentials for an MCP server.
+
+Try 'tsh help [command]' to get help for a given command.
+
+[31mERROR: [0mexpected command but got "phase"
+

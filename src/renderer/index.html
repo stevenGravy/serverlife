@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ws://127.0.0.1:*;" />
+  <title>ServerLife</title>
+  <link rel="stylesheet" href="vendor/xterm.css" />
+  <link rel="stylesheet" href="fonts/fonts.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Title bar: session tabs live here, macOS traffic lights get a gutter -->
+    <header id="titlebar">
+      <div class="tl-gutter"></div>
+      <div id="tabstrip" class="tabstrip"></div>
+      <button id="tab-add" class="tab-add" title="New session or local shell (⌘N)">+</button>
+      <div class="spacer"></div>
+      <div id="titlebar-actions" class="tb-actions">
+        <button class="icon-btn" data-action="toggle-files" title="File browser (⌘E)">
+          <svg viewBox="0 0 16 16"><path d="M1.5 3.5A1.5 1.5 0 0 1 3 2h3.2l1.3 1.6H13A1.5 1.5 0 0 1 14.5 5v6A1.5 1.5 0 0 1 13 12.5H3A1.5 1.5 0 0 1 1.5 11z"/></svg>
+        </button>
+        <button class="icon-btn" data-action="toggle-multiexec" title="Multi-exec (⌘⇧M)">
+          <svg viewBox="0 0 16 16"><path d="M2 3h12M2 8h12M2 13h7"/></svg>
+        </button>
+        <button class="icon-btn ai-toggle" data-action="toggle-ai" title="AI assistant — show or hide the panel on the right">&#x2726;</button>
+        <button class="icon-btn" data-action="toggle-transfers" title="Transfers (⌘J)">
+          <svg viewBox="0 0 16 16"><path d="M8 2v8m0 0 3-3m-3 3L5 7M2.5 12.5h11"/></svg>
+        </button>
+        <button class="icon-btn" data-action="toggle-sidebar" title="Sidebar (⌘B)">
+          <svg viewBox="0 0 16 16"><path d="M2 2.5h12v11H2zM6 2.5v11"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div id="body">
+      <!-- Sidebar: hosts, saved profiles, teleport -->
+      <aside id="sidebar">
+        <div class="sb-head">
+          <div id="sb-tabs" class="sb-tabs">
+            <button class="sb-tab active" data-tab="hosts">Resources</button>
+            <button class="sb-tab" data-tab="saved">Saved</button>
+            <button class="sb-tab" data-tab="teleport">Teleport</button>
+          </div>
+        </div>
+        <!-- Only shown on the Saved tab: which kind of saved thing is listed. -->
+        <div id="sb-subtabs" class="sb-subtabs hidden">
+          <button class="sb-subtab active" data-saved="profiles">Profiles</button>
+          <button class="sb-subtab" data-saved="macros">Macros</button>
+          <button class="sb-subtab" data-saved="s3">S3</button>
+        </div>
+        <!-- Only shown on the Resources tab, and only when Settings →
+             KubeLife → "Enable Kubernetes support" is on: which kind of
+             resource is listed, SSH hosts and Kubernetes clusters together
+             by default. See sidebar.js initSidebar()/applyKubeEnabledSetting(). -->
+        <div id="sb-kind-filter" class="sb-subtabs hidden">
+          <button class="sb-kind-tab active" data-kind="all">All</button>
+          <button class="sb-kind-tab" data-kind="ssh">SSH</button>
+          <button class="sb-kind-tab" data-kind="kube">K8s</button>
+        </div>
+        <div class="sb-search">
+          <input id="host-filter" type="text" placeholder="Filter hosts or tags — env=prod" spellcheck="false"
+                 list="host-tag-list" title="Text matches anywhere.&#10;Tags: key=value · key:partial · key=a,b for either · key: for any value · key=pre* glob · -key=value to exclude.&#10;Terms are combined with AND." />
+          <datalist id="host-tag-list"></datalist>
+          <div class="sb-search-row">
+            <button id="btn-tags" class="ghost-btn sm" title="Browse every tag in the inventory">Tags…</button>
+            <button id="btn-show-tags" class="ghost-btn sm" title="Show every tag on each host row">Show tags</button>
+            <button id="btn-heartbeats" class="ghost-btn sm" title="Show how long ago each Teleport node last checked in">Heartbeats</button>
+            <!-- Only there when something is actually quiet, or while quiet
+                 nodes are being hidden and the list needs a way to say so. -->
+            <button id="btn-quiet" class="ghost-btn sm hidden">Quiet: 0</button>
+            <button id="btn-folders" class="ghost-btn sm" title="Organise hosts into folders — the big view">Folders</button>
+            <button id="btn-clear-selection" class="ghost-btn sm hidden">Clear selection</button>
+            <span id="filter-count" class="badge"></span>
+          </div>
+        </div>
+        <div id="sb-panel-hosts" class="sb-panel"></div>
+        <div id="sb-panel-saved" class="sb-panel hidden"></div>
+        <div id="sb-panel-teleport" class="sb-panel hidden"></div>
+        <div class="sb-foot">
+          <button id="btn-add-server" class="ghost-btn" title="Define a new server (⌘⇧N)">+&nbsp;Add</button>
+          <button id="btn-connect-cluster" class="ghost-btn" title="Log in to a Teleport cluster">+ Connect Teleport</button>
+          <button id="btn-refresh" class="ghost-btn" title="Refresh inventory (⌘R)">Refresh</button>
+          <span id="tsh-badge" class="badge"></span>
+        </div>
+      </aside>
+
+      <div id="sidebar-resizer" class="v-resizer"></div>
+
+      <!-- Main: file browser + terminal panes -->
+      <main id="main">
+        <div id="workspace">
+
+          <section id="terminals">
+            <div id="panes" class="panes"></div>
+            <div id="empty-state" class="empty">
+              <div class="empty-inner">
+                <!-- Idle animation: nodes orbiting a core, packets in flight.
+                     It runs until the first session takes over the view. -->
+                <div class="orbiter" aria-hidden="true">
+                  <svg viewBox="0 0 240 240" class="orbit-svg">
+                    <defs>
+                      <radialGradient id="coreGlow">
+                        <stop offset="0%" stop-color="var(--accent)" stop-opacity=".9"/>
+                        <stop offset="70%" stop-color="var(--accent)" stop-opacity=".15"/>
+                        <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+                      </radialGradient>
+                    </defs>
+
+                    <circle cx="120" cy="120" r="54" class="ring ring-1"/>
+                    <circle cx="120" cy="120" r="78" class="ring ring-2"/>
+                    <circle cx="120" cy="120" r="102" class="ring ring-3"/>
+
+                    <circle cx="120" cy="120" r="46" fill="url(#coreGlow)" class="core-glow"/>
+                    <g class="core">
+                      <rect x="105" y="108" width="30" height="9" rx="2"/>
+                      <rect x="105" y="120" width="30" height="9" rx="2"/>
+                      <circle cx="111" cy="112.5" r="1.6" class="led"/>
+                      <circle cx="111" cy="124.5" r="1.6" class="led led-b"/>
+                    </g>
+
+                    <g class="spin spin-1">
+                      <g class="node" transform="translate(120,66)"><rect x="-9" y="-6" width="18" height="12" rx="2"/><circle cx="-4" cy="0" r="1.4" class="led"/></g>
+                    </g>
+                    <g class="spin spin-2">
+                      <g class="node" transform="translate(198,120)"><rect x="-9" y="-6" width="18" height="12" rx="2"/><circle cx="-4" cy="0" r="1.4" class="led led-b"/></g>
+                      <g class="node" transform="translate(42,120)"><rect x="-9" y="-6" width="18" height="12" rx="2"/><circle cx="-4" cy="0" r="1.4" class="led"/></g>
+                    </g>
+                    <g class="spin spin-3">
+                      <g class="node" transform="translate(120,18)"><rect x="-9" y="-6" width="18" height="12" rx="2"/><circle cx="-4" cy="0" r="1.4" class="led led-b"/></g>
+                      <g class="node" transform="translate(120,222)"><rect x="-9" y="-6" width="18" height="12" rx="2"/><circle cx="-4" cy="0" r="1.4" class="led"/></g>
+                    </g>
+
+                    <circle r="2.4" class="packet packet-1"/>
+                    <circle r="2.4" class="packet packet-2"/>
+                    <circle r="2.4" class="packet packet-3"/>
+                  </svg>
+                </div>
+
+                <h1>ServerLife</h1>
+                <p class="tagline">
+                  <span class="tag-a">servers are life</span>
+                  <span class="tag-sep">·</span>
+                  <span class="tag-b">life is servers</span>
+                </p>
+                <div class="empty-actions">
+                  <!-- Icons are inline so they inherit currentColor and need
+                       no network or font of their own. -->
+                  <button class="primary-btn big-btn" data-action="new-session">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="4" width="15" height="12" rx="2"/><path d="M6 8.5 8.5 11 6 13.5M10.5 13.5h4"/></svg>
+                    <span>New session</span>
+                  </button>
+                  <button class="ghost-btn big-btn" data-action="quick-connect">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11 2.5 4.5 11.5h4l-.5 6 6.5-9h-4z"/></svg>
+                    <span>Quick connect</span>
+                  </button>
+                  <button class="ghost-btn big-btn" data-action="tsh-login">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M7.5 10h6M10.5 7.5 13 10l-2.5 2.5"/></svg>
+                    <span>Connect Teleport cluster</span>
+                  </button>
+                  <button class="ghost-btn big-btn" data-action="new-local">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5 8 10l-5 4.5M10.5 14.5h6.5"/></svg>
+                    <span>Local shell</span>
+                  </button>
+                  <!-- Opens the assistant chosen in Settings, or the list of them, in
+                       the panel on the right. -->
+                  <button class="ghost-btn big-btn" data-action="toggle-ai">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 11.6 8.4 17.5 10l-5.9 1.6L10 17.5l-1.6-5.9L2.5 10l5.9-1.6z"/><path d="M15.5 2.5v3M14 4h3"/></svg>
+                    <span>AI assistant</span>
+                  </button>
+                  <button class="ghost-btn big-btn" data-action="nettools">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M3 10h14M10 3c3.5 3.8 3.5 10.2 0 14-3.5-3.8-3.5-10.2 0-14z"/></svg>
+                    <span>Network and certificate tools</span>
+                  </button>
+                  <button class="ghost-btn big-btn" data-action="guide">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 4.5h5a2 2 0 0 1 2 2v10a1.6 1.6 0 0 0-1.6-1.6H3.5z"/><path d="M16.5 4.5h-5a2 2 0 0 0-2 2v10a1.6 1.6 0 0 1 1.6-1.6h5.4z"/></svg>
+                    <span>Guide</span>
+                  </button>
+                  <button class="ghost-btn big-btn" data-action="new-window">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="5.5" width="11" height="10" rx="1.8"/><path d="M6.5 5.5V4a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 17.5 4v8a1.5 1.5 0 0 1-1.5 1.5h-2.5"/></svg>
+                    <span>New window</span>
+                  </button>
+                </div>
+                <ul class="empty-hints">
+                  <li><b>⌘N</b> new session</li>
+                  <li><b>⌘⌥C</b> quick connect</li>
+                  <li><b>⌘⇧D</b> split right</li>
+                  <li><b>⌘⇧M</b> multi-exec</li>
+                  <li><b>⌘E</b> file browser</li>
+                  <li><b>⌘⇧T</b> network tools</li>
+                  <li><b>⌘⌥N</b> new window</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div id="bottom-resizer" class="h-resizer hidden"></div>
+
+        <!-- Bottom dock: transfers / multi-exec -->
+        <section id="dock" class="hidden">
+          <div class="dock-head">
+            <div class="dock-tabs">
+              <button class="dock-tab active" data-dock="transfers">Transfers</button>
+              <button class="dock-tab" data-dock="multiexec">Multi-Exec</button>
+              <button class="dock-tab" data-dock="forwards">Tunnels</button>
+              <button class="dock-tab" data-dock="log">Connection log</button>
+              <button class="dock-tab" data-dock="downloads">Downloads</button>
+              <button class="dock-tab" data-dock="watch">Watch</button>
+            </div>
+            <div class="dock-actions">
+              <button class="ghost-btn sm" id="dock-clear">Clear</button>
+              <button class="icon-btn sm" id="dock-close" title="Close">×</button>
+            </div>
+          </div>
+          <div id="dock-transfers" class="dock-panel"></div>
+          <div id="dock-multiexec" class="dock-panel hidden"></div>
+          <div id="dock-forwards" class="dock-panel hidden"></div>
+          <div id="dock-log" class="dock-panel hidden"></div>
+          <div id="dock-downloads" class="dock-panel hidden"></div>
+          <div id="dock-watch" class="dock-panel hidden"></div>
+        </section>
+      </main>
+    </div>
+
+    <div id="statusbar">
+      <span id="status-conn" class="st-item"></span>
+      <span id="status-broadcast" class="st-item hidden">BROADCAST</span>
+      <span class="spacer"></span>
+      <span id="status-watches" class="st-item hidden" title="Folders and files being uploaded as they change (Watch panel)"></span>
+      <span id="status-forwards" class="st-item"></span>
+      <span id="status-xfer" class="st-item"></span>
+      <span id="status-msg" class="st-item"></span>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="login-banner" class="hidden">
+    <span class="login-banner-spinner"></span>
+    <span id="login-banner-text"></span>
+  </div>
+  <div id="toast-root"></div>
+  <div id="ctxmenu-root"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

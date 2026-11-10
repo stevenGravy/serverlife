@@ -1,0 +1,56 @@
+/*
+ * Fonts bundled with ServerLife, each under its own licence (see README.md
+ * here). Generated with the list in js/bundledfonts.js; a face is only
+ * fetched when something on screen uses it.
+ */
+@font-face { font-family: 'Anonymous Pro'; src: url('AnonymousPro.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Atkinson Hyperlegible Mono'; src: url('AtkinsonHyperlegibleMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Azeret Mono'; src: url('AzeretMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'B612 Mono'; src: url('B612Mono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Bungee'; src: url('Bungee.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Chivo Mono'; src: url('ChivoMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Courier Prime'; src: url('CourierPrime.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Cousine'; src: url('Cousine.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Creepster'; src: url('Creepster.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Cutive Mono'; src: url('CutiveMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'DM Mono'; src: url('DMMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Fira Code'; src: url('FiraCode.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Fira Mono'; src: url('FiraMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Fragment Mono'; src: url('FragmentMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Geist Mono'; src: url('GeistMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'IBM Plex Mono'; src: url('IBMPlexMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Inconsolata'; src: url('Inconsolata.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Intel One Mono'; src: url('IntelOneMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'JetBrains Mono'; src: url('JetBrainsMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Kode Mono'; src: url('KodeMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Lekton'; src: url('Lekton.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Major Mono Display'; src: url('MajorMonoDisplay.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Martian Mono'; src: url('MartianMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Monofett'; src: url('Monofett.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Monoton'; src: url('Monoton.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Noto Sans Mono'; src: url('NotoSansMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Nova Mono'; src: url('NovaMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Overpass Mono'; src: url('OverpassMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Oxygen Mono'; src: url('OxygenMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Permanent Marker'; src: url('PermanentMarker.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Pirata One'; src: url('PirataOne.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Press Start 2P'; src: url('PressStart2P.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Red Hat Mono'; src: url('RedHatMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Reddit Mono'; src: url('RedditMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Roboto Mono'; src: url('RobotoMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Share Tech Mono'; src: url('ShareTechMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Silkscreen'; src: url('Silkscreen.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Sometype Mono'; src: url('SometypeMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Sono'; src: url('Sono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Source Code Pro'; src: url('SourceCodePro.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Space Mono'; src: url('SpaceMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Special Elite'; src: url('SpecialElite.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Spline Sans Mono'; src: url('SplineSansMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Syne Mono'; src: url('SyneMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Ubuntu Mono'; src: url('UbuntuMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Ubuntu Sans Mono'; src: url('UbuntuSansMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'UnifrakturCook'; src: url('UnifrakturCook.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'UnifrakturMaguntia'; src: url('UnifrakturMaguntia.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Victor Mono'; src: url('VictorMono.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'VT323'; src: url('VT323.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Xanh Mono'; src: url('XanhMono.ttf') format('truetype'); font-display: swap; }
