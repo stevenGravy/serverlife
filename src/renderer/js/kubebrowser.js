@@ -9,6 +9,10 @@ import { diffLines } from './textdiff.js';
 import { buildValuesYaml } from './yamlform.js';
 import { detectStalledRollouts } from './alerts.js';
 import { toCsv } from './csv.js';
+import { askNamespace, extraNamespaces } from './kubenamespaces.js';
+
+// The Namespace dropdown's "type one in" entry — not a name Kubernetes allows.
+const TYPE_NAMESPACE = '\u0001type';
 
 /**
  * The full cluster browser — KubeLife's own general-purpose, every-kind view.
@@ -481,11 +485,30 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
       else if (selected === '3d') load3dScene();
       else if (selected) selectType(selected, podScope ? { selector: podScope.selector, scopeLabel: podScope.label } : {});
     };
+    // Typed-in namespaces (and the context's own default) sit beside the
+    // listed ones — a role scoped to one namespace lists none at all, and
+    // a selected name missing from the options would show as "All".
+    const extra = extraNamespaces(kubeSpec.contextName, namespaces, opts.contextNamespace);
+    if (selectedNs && !namespaces.includes(selectedNs) && !extra.includes(selectedNs)) extra.push(selectedNs);
     const nsSel = select(
-      [{ value: '', label: 'All namespaces' }, ...namespaces.map((n) => ({ value: n, label: n }))],
+      [{ value: '', label: 'All namespaces' }, ...[...namespaces, ...extra].map((n) => ({ value: n, label: n })),
+        { value: TYPE_NAMESPACE, label: 'Type a namespace…' }],
       selectedNs,
     );
-    nsSel.addEventListener('change', () => {
+    nsSel.addEventListener('change', async () => {
+      if (nsSel.value === TYPE_NAMESPACE) {
+        nsSel.value = selectedNs;
+        const ns = await askNamespace(kubeSpec.contextName);
+        if (!ns) return;
+        chosenNs.clear(); chosenNs.add(ns);
+        selectedNs = ns;
+        // A cluster-wide pod count the role could not read is worth asking
+        // again now there is a namespace to ask it in.
+        if (overview && overview.podsError) loadOverview();
+        refreshForNamespace();
+        render();
+        return;
+      }
       chosenNs.clear();
       selectedNs = nsSel.value;
       if (selectedNs) chosenNs.add(selectedNs);
@@ -509,7 +532,7 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
         class: 'ghost-btn sm', text: 'All namespaces', style: 'margin-bottom:6px;width:100%',
         onClick: () => { chosenNs.clear(); selectedNs = ''; nsMenuOpen = false; refreshForNamespace(); render(); },
       }),
-      ...namespaces.map((n) => {
+      ...[...namespaces, ...extra].map((n) => {
         const cb = el('input', { type: 'checkbox' });
         cb.checked = chosenNs.has(n);
         cb.addEventListener('change', () => {
@@ -666,12 +689,29 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
       // What the lists themselves return — never can-i's opinion of them,
       // which through Teleport says "no" to lists that work (see selectType).
       // A list that fails shows "—" and why, never a 0.
-      const [nsRes, nodeRes, podRes] = await Promise.all([
+      const [nsRes, nodeRes, podResAll] = await Promise.all([
         window.api.kube.namespaces(kubeSpec),
         window.api.kube.resources({ spec: kubeSpec, type: { name: 'nodes', namespaced: false } }),
         window.api.kube.resources({ spec: kubeSpec, type: { name: 'pods', namespaced: true } }),
       ]);
       namespaces = nsRes.ok ? (nsRes.namespaces || []).slice().sort() : namespaces;
+      // Nothing listed and nothing chosen: a namespace-scoped role sees an
+      // empty cluster under "All namespaces". Start it in the namespace it
+      // was last typed into, or its kubeconfig context's own default.
+      if (!selectedNs && !namespaces.length) {
+        const fallback = extraNamespaces(kubeSpec.contextName, [], opts.contextNamespace)[0];
+        if (fallback) {
+          selectedNs = fallback; chosenNs.clear(); chosenNs.add(fallback);
+          if (selected === 'helm') loadHelm();
+          else if (selected === '3d') load3dScene();
+          else if (selected && typeof selected === 'object') selectType(selected);
+        }
+      }
+      // A role that may not list pods cluster-wide may still list them in
+      // the namespace on screen — the count from there beats a "—".
+      const podRes = !podResAll.ok && selectedNs
+        ? await window.api.kube.resources({ spec: kubeSpec, type: { name: 'pods', namespaced: true, namespace: selectedNs } })
+        : podResAll;
       /*
        * Teleport does not refuse a list a role cannot see — it returns it
        * empty, filtered to what the role covers. So only an *empty* answer
@@ -696,6 +736,7 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
           error: nodesHidden ? 'none your role can see' : (nodeRes.ok ? null : (nodeRes.error || 'could not list nodes')),
         },
         namespacesError: nsHidden ? 'none your role can see' : (nsRes.ok ? null : (nsRes.error || 'could not list namespaces')),
+        podsError: podRes.ok ? null : (podRes.error || 'could not list pods'),
         podsByPhase,
         // Kept so a card can answer "which ones?" without another fetch.
         podItems, nodeItems,

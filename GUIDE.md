@@ -2084,6 +2084,12 @@ means. It is being added in stages; this section grows as each one lands.
   YAML (viewable, editable, exportable), delete, and port-forwarding. Any
   port-forwards running on that cluster show inline the moment it's
   expanded — no need to open the full browser just to see what's live.
+- **A namespace you can use but not list**: a role scoped to one namespace
+  can't list namespaces, so the tree has nothing to show. *Type a
+  namespace…* at the foot of the tree (and in the full browser's Namespace
+  dropdown) opens one by name; it's remembered for that context and offered
+  beside the listed ones next time, along with the kubeconfig context's own
+  default namespace. A cluster that lists none opens straight into that one.
 
 ### The full cluster browser
 

@@ -11,6 +11,32 @@ tagged `v<version>`.
 
 ---
 
+## [0.33.0] — 2026-11-10
+
+A Kubernetes role scoped to one namespace can now get to it by typing its
+name, where every namespace picker used to come up empty.
+
+### Added
+
+- **Type a namespace in** when your role can use one but not list them —
+  *Type a namespace…* in the cluster browser's Namespace dropdown and at the
+  foot of a context's namespaces in the sidebar. A typed name is remembered
+  per context and offered with the listed ones next time, and the context's
+  own default namespace from the kubeconfig is offered too.
+- **A cluster that lists no namespaces opens in one it can use** — the last
+  one typed for that context, or the kubeconfig's default — instead of an
+  empty "All namespaces".
+
+### Fixed
+
+- **Pods by phase on the Overview** counts the namespace on screen when the
+  role may not list pods cluster-wide, instead of a "—"; choosing a namespace
+  asks again.
+- **A namespace selected but not in the list** no longer shows as "All
+  namespaces" in the dropdown.
+
+---
+
 ## [0.32.0] — 2026-11-10
 
 Put an SSH host behind Teleport for real — the cluster's own `install.sh`,

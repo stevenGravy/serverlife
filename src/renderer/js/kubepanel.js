@@ -6,6 +6,7 @@ import { openKubeBrowser } from './kubebrowser.js';
 import { requestableHosts } from './requestable.js';
 import { groupKeyFor } from './folders.js';
 import { isWatched, toggleWatch } from './watch.js';
+import { askNamespace, extraNamespaces } from './kubenamespaces.js';
 
 // Dynamic, not static: sidebar.js already imports this module, and a static
 // import back would close the cycle — the same workaround sessions.js and
@@ -669,7 +670,7 @@ export function kubeContextRow(c, opts = {}) {
     el('button', {
       class: 'ghost-btn sm', text: '⤢',
       title: 'Open the full cluster browser — every resource kind, including custom ones',
-      onClick: (e) => { e.stopPropagation(); openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name); },
+      onClick: (e) => { e.stopPropagation(); openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { contextNamespace: c.namespace || undefined }); },
     }))];
   if (isOpen) {
     if (mine.length) rows.push(...activeForwardRows(mine));
@@ -761,11 +762,15 @@ function namespaceRows(c) {
   const indent = 'padding-left:24px';
   // Re-reading keeps the list it has on screen; "Reading…" only when there is none yet.
   if (!entry || (entry.loading && !entry.namespaces)) return [el('div', { class: 'sb-empty', style: indent, text: 'Reading namespaces…' })];
-  if (entry.error) return [el('div', { class: 'sb-empty', style: indent, text: entry.error })];
-  if (!entry.namespaces.length) return [el('div', { class: 'sb-empty', style: indent, text: 'No namespaces.' })];
-
+  // A role scoped to one namespace cannot list them — a refusal, or an
+  // empty list through Teleport — so the names typed in before, the
+  // context's own default, and a way to type one sit under either.
+  const listed = entry.namespaces || [];
+  const extra = extraNamespaces(c.contextName, listed, c.namespace);
   const rows = [];
-  for (const ns of entry.namespaces) {
+  if (entry.error) rows.push(el('div', { class: 'sb-empty', style: indent, text: entry.error }));
+  else if (!listed.length && !extra.length) rows.push(el('div', { class: 'sb-empty', style: indent, text: 'No namespaces.' }));
+  for (const ns of [...listed, ...extra]) {
     const key = nsKey(c, ns);
     const nsOpen = expandedNs.has(key);
     rows.push(el('div', {
@@ -776,6 +781,15 @@ function namespaceRows(c) {
       el('span', { class: 'name', text: ns })));
     if (nsOpen) rows.push(...podRowsFor(c, ns));
   }
+  rows.push(el('div', {
+    class: 'sb-item', style: indent + ';color:var(--muted)',
+    title: 'Open a namespace by name — for when your role can use it but not list namespaces',
+    onClick: async () => {
+      const ns = await askNamespace(c.contextName);
+      if (ns && !expandedNs.has(nsKey(c, ns))) toggleNamespace(c, ns);
+      else state.emit('kubeContexts');
+    },
+  }, el('span', { class: 'chev', text: '+' }), el('span', { class: 'name', text: 'Type a namespace…' })));
   return rows;
 }
 
@@ -1399,12 +1413,22 @@ async function openKubeContextMenu(e, c, groupKey) {
     {
       label: 'Browse full cluster…',
       title: 'Every resource kind, including custom ones',
-      onClick: () => openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name),
+      onClick: () => openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { contextNamespace: c.namespace || undefined }),
+    },
+    // For a role that can use one namespace but not list them: there is
+    // nothing in the browser's dropdown to pick, so name it on the way in.
+    {
+      label: 'Browse a namespace…',
+      title: 'Type the namespace to open the browser in — for when your role cannot list namespaces',
+      onClick: async () => {
+        const ns = await askNamespace(c.contextName, { value: c.namespace || '' });
+        if (ns) openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { initialNamespace: ns, contextNamespace: c.namespace || undefined });
+      },
     },
     {
       label: 'Manage Helm releases…',
       title: 'Opens the full cluster browser straight on its Helm releases list',
-      onClick: () => openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { initialView: 'helm' }),
+      onClick: () => openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { initialView: 'helm', contextNamespace: c.namespace || undefined }),
     },
     // Same preference the file browser's 3D button already answers to —
     // this is the same "do I want 3D at all" switch, not a second one.
@@ -1414,7 +1438,7 @@ async function openKubeContextMenu(e, c, groupKey) {
     state.settings.show3dView !== false ? {
       label: 'Open 3D view…',
       title: 'Namespaces as districts, pods as buildings — click one to exec into it',
-      onClick: () => openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { initialView: '3d' }),
+      onClick: () => openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { initialView: '3d', contextNamespace: c.namespace || undefined }),
     } : null,
     // The same "who else is in what, right now" view a Teleport SSH host's
     // own menu already offers — livesessions.js is already kind-agnostic

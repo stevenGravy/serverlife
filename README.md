@@ -27,6 +27,8 @@ because it was being watched and has left the inventory.</sub>
 | | |
 |---|---|
 | ![The hosts pane](docs/screenshots/hosts-pane.png) | **A whole cluster in a pane.** Folders on or off, rows or tiles, the same filter language, and drag onto a folder heading to file something. The sidebar stops at twenty hosts per group and offers this for the rest. |
+| <img width="2016" height="978" alt="197BB26E-6828-48C3-9D23-DF2725408E30" src="https://github.com/user-attachments/assets/b4afeb5a-9745-4cc3-bd85-ef11f46e7f20" /> | ** Full Kubernetes browsing ** on existing k8s clusters, Teleport protected ones and easily add Teleport integration. Wizards to help add mapping from clusterroles, roles into Teleport roles. |
+
 | ![The folder browser](docs/screenshots/folders.png) | **Folders, with room to arrange them.** A tree, what is in the selected folder, and the rule that fills it — `env=prod` here — above the hosts it currently claims. |
 | ![Quick connect](docs/screenshots/quick-connect.png) | **Quick connect**, for a server that is in no list yet: `user@host`, a pasted ssh command line, or one of the recent ones underneath. It can test the connection or run a single command without opening a terminal. |
 
