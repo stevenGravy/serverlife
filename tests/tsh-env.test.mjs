@@ -63,3 +63,28 @@ test('local shells get everyone’s only, and only when asked', () => {
   teleport.setEnvSettings({ global: 'A=1', clusters: { x: 'B=2' }, inShells: true });
   assert.deepEqual(teleport.envForShells(), { A: '1' });
 });
+
+test('a tsh home can be written with $VAR or ${VAR}; an unset one is no home at all', () => {
+  process.env.SL_TEST_WORK = '/tmp/sl-work';
+  assert.equal(teleport.expandHome('$SL_TEST_WORK/.tsh'), '/tmp/sl-work/.tsh');
+  assert.equal(teleport.expandHome('${SL_TEST_WORK}/tsh-b'), '/tmp/sl-work/tsh-b');
+  assert.equal(teleport.expandHome('$SL_TEST_NOT_SET/.tsh'), '');
+  assert.deepEqual(teleport.setHomes(['$SL_TEST_NOT_SET/.tsh', '$SL_TEST_WORK/.tsh']), ['/tmp/sl-work/.tsh']);
+  teleport.setHomes([]);
+  delete process.env.SL_TEST_WORK;
+});
+
+test("a home's own variables sit between everyone's and a cluster's", () => {
+  process.env.SL_TEST_WORK = '/tmp/sl-work';
+  teleport.setEnvSettings({
+    global: 'A=global\nB=global',
+    homesEnv: { '$SL_TEST_WORK/.tsh': 'B=home\nC=home' },
+    clusters: { 'x.example.com': 'C=cluster' },
+  });
+  const inHome = teleport.tshEnv('/tmp/sl-work/.tsh', 'x.example.com:443');
+  assert.deepEqual([inHome.A, inHome.B, inHome.C], ['global', 'home', 'cluster']);
+  const elsewhere = teleport.tshEnv('/tmp/other-home', null);
+  assert.deepEqual([elsewhere.A, elsewhere.B, elsewhere.C], ['global', 'global', undefined]);
+  teleport.setEnvSettings({});
+  delete process.env.SL_TEST_WORK;
+});

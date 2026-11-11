@@ -103,6 +103,8 @@ export function modal({ title, subtitle, render, buttons, width, onOpen, resize 
     };
 
     const onKey = (e) => {
+      // Escape in a code editor is the editor's (it closes its own search box), not a way to lose what was typed.
+      if (e.key === 'Escape' && e.target?.closest?.('.cm-editor')) return;
       if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(undefined); }
       /*
        * Enter, when nothing inside the modal actually has focus to answer

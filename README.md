@@ -303,7 +303,9 @@ The short version:
 - **Beams and Phases** — beams listed inside their cluster (beams.sh and
   beams.run clusters by default), started from a saved Phase with chosen roles
   delegated, and Phases built, forked, edited and deleted from a tab beside
-  them, each with its history and the beams running it.
+  them, each with its history and the beams running it — or put together from
+  setups (languages, cloud CLIs, Postgres, Redis, a repo to clone, your
+  dotfiles) into a checked `phase.yaml` and built with `tsh phase apply`.
 - **KubeLife — Kubernetes beside your servers.** Clusters from the kubeconfig
   and from Teleport sit in the same tree, folders and filter as SSH hosts; one
   setting turns it all off and leaves no trace. See

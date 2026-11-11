@@ -1,3 +1,4 @@
+import { serverIcon } from './hosticons.js';
 import { state } from './state.js';
 import { el, clear, colorCss } from './util.js';
 import { status, toast, textInput, contextMenu, select } from './ui.js';
@@ -941,6 +942,7 @@ function card(pane, view, host, folder) {
         ? el('span', { class: 'hwatch', text: '\u{1F514}', title: 'Watched for disappearance' })
         : null,
       el('span', { class: 'hp-name', text: host.name || host.alias }),
+      serverIcon(host.type === 'teleport' ? 'Teleport SSH server' : 'SSH server'),
       icon ? el('span', { class: 'hico', text: icon }) : null,
       // The same mark the host list carries: two rows with one name look
       // like a bug in the list until something says otherwise.
@@ -1085,7 +1087,8 @@ function tableRow(pane, view, host, folder, cols = [], gridTemplate = null) {
   },
     el('div', { class: 'hp-td name' },
       el('span', { class: 'st' + (conn ? ' connected' : '') }),
-      el('span', { class: 'hp-name', text: host.name || host.alias })),
+      el('span', { class: 'hp-name', text: host.name || host.alias }),
+      serverIcon(host.type === 'teleport' ? 'Teleport SSH server' : 'SSH server')),
     el('div', { class: 'hp-td status' },
       host.requestable
         ? el('span', { class: 'tag req', text: 'req' })

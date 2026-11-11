@@ -2,6 +2,7 @@ import '@xterm/xterm/css/xterm.css';
 import { state } from './state.js';
 import { $, $$, el, clear, fmtBytes } from './util.js';
 import { toast, status, modal, field, textInput, select, checkbox, confirm, contextMenu } from './ui.js';
+import { organizeSettings } from './settingsnav.js';
 import { initSidebar, refreshInventory, renderSidebar, updateStatusBar } from './sidebar.js';
 import { initTabs, renderTabs } from './tabs.js';
 import { initFiles, startFollowLoop, restartFollowLoop, setExplorerPosition, renderRemote } from './files.js';
@@ -75,6 +76,8 @@ async function boot() {
   initFiles();
   initDock();
   import('./monitor.js').then((m) => m.initMonitor()).catch(() => {});
+  // After sleep or a locked screen, terminals repaint with fresh glyph caches.
+  window.api.app.onResume?.(() => import('./sessions.js').then((m) => m.repaintAllTerminals()).catch(() => {}));
   /*
    * A terminal measures its font's cell once, when it opens — and a bundled
    * font is only fetched when something first uses it, so the first terminal
@@ -882,11 +885,18 @@ async function openSettings() {
   ], state.settings.cursorStyle || 'bar');
   const hlIn = checkbox('Highlight keywords in terminal output', state.settings.highlight === true);
   const shellTitleIn = checkbox('Name the shell in a local tab\u2019s title', !!state.settings.showShellInTitle);
+  const serverIconIn = checkbox('Server icon on SSH hosts, beside the ☸ on Kubernetes clusters', state.settings.showServerIcon !== false);
   const netIconIn = checkbox('Network and certificate tools icon on every session header',
     state.settings.showPaneNetIcon !== false);
   // One long-running command per connection; off on per-session-MFA hosts anyway.
   const liveStatsIn = checkbox('Live stats under each server session (CPU, memory, disk, network)',
     state.settings.liveStats !== false);
+  // This computer's, under a plain local shell — macOS and Linux; hiding one from its menu turns this off.
+  const localStatsIn = ['darwin', 'linux'].includes(state.appInfo?.platform)
+    ? checkbox('Live stats under local shells too, for this computer', state.settings.localStats !== false) : null;
+  const onePerTabIn = checkbox('One live stats bar per machine in a tab — split panes on the same host share it',
+    state.settings.statsOncePerTab === true);
+  for (const box of [localStatsIn, onePerTabIn]) if (box) box.style.marginLeft = '22px';
   /*
    * The one switch for everything the app runs on a host by itself, on a
    * timer: on a Teleport node each is an entry in the audit log. Off by
@@ -1235,6 +1245,74 @@ async function openSettings() {
    * to offer a proxy owns it.
    */
   let tshHomes = [...(state.settings.tshHomes || [])];
+  // Variables each home's tsh runs with, keyed by the home as written (teleport.js tshEnv).
+  const tshHomeEnv = { ...(state.settings.tshHomeEnv || {}) };
+
+  /*
+   * Add a tsh home — or change one: the path typed (~, $VAR and ${VAR} allowed,
+   * read each time) or browsed for, where it points now, and NAME=value
+   * variables for every tsh run against it. Resolves { path, env } or null.
+   */
+  const homeDialog = async ({ path: start = '', env: startEnv = '' } = {}) => {
+    const pathIn = textInput({ value: start, placeholder: '~/.tsh-work  or  $TELEPORT_HOME  or  ${WORK}/.tsh', style: 'flex:1' });
+    const where = el('div', { class: 'hint', style: 'min-height:1.3em;word-break:break-all' });
+    const envIn = el('textarea', { rows: 4, spellcheck: 'false', placeholder: 'TELEPORT_TOOLS_VERSION=18.11.10\nTELEPORT_ADD_KEYS_TO_AGENT=no', style: 'width:100%;font-family:var(--mono);font-size:12px' });
+    envIn.value = startEnv;
+    const envNote = el('div', { class: 'hint', style: 'min-height:1.2em' });
+    let t1 = null;
+    const look = () => {
+      clearTimeout(t1);
+      t1 = setTimeout(async () => {
+        const r = await window.api.teleport.resolveHome(pathIn.value).catch(() => null);
+        if (!r || !r.raw) { where.textContent = ''; return; }
+        if (r.unset.length) { where.textContent = `$${r.unset.join(', $')} is not set for ServerLife — the home would be skipped until it is`; where.style.color = 'var(--amber)'; return; }
+        where.style.color = '';
+        where.textContent = r.resolved === r.raw ? (r.exists ? `${r.profiles} profile${r.profiles === 1 ? '' : 's'} there` : 'Not there yet — tsh makes it at the first login')
+          : `Now: ${r.resolved}${r.exists ? ` — ${r.profiles} profile${r.profiles === 1 ? '' : 's'}` : ' — not there yet'}`;
+      }, 200);
+    };
+    const checkEnv = async () => {
+      const r = await window.api.teleport.parseEnv(envIn.value).catch(() => ({ vars: {}, errors: [] }));
+      const n = Object.keys(r.vars || {}).length;
+      envNote.textContent = r.errors?.length ? r.errors.join(' · ') : (n ? `${n} variable${n === 1 ? '' : 's'} for tsh with this home` : '');
+      envNote.style.color = r.errors?.length ? 'var(--red)' : '';
+      return r;
+    };
+    pathIn.addEventListener('input', look);
+    envIn.addEventListener('input', checkEnv);
+    return modal({
+      title: start ? 'Change a tsh home' : 'Add a tsh home',
+      width: 'min(600px, 94vw)',
+      render: (body) => {
+        body.append(
+          field('Directory (TELEPORT_HOME)', el('div', {},
+            el('div', { style: 'display:flex;gap:6px' }, pathIn,
+              el('button', { class: 'ghost-btn sm', type: 'button', text: 'Browse…', onClick: async () => {
+                const d = await window.api.dialog.chooseDir(pathIn.value || undefined);
+                if (d) { pathIn.value = d; look(); }
+              } })),
+            where),
+          'A path, or an environment variable — $TELEPORT_HOME, ${WORK}/.tsh — read each time the app starts and when Settings are saved.'),
+          field('Variables for this home (optional)', el('div', {}, envIn, envNote),
+            'NAME=value, one a line, for every tsh command run with this home — on top of the ones for every cluster, under a cluster\u2019s own.'));
+        look(); checkEnv();
+      },
+      buttons: [
+        { label: 'Cancel', value: null },
+        {
+          label: start ? 'Save' : 'Add', class: 'primary-btn',
+          onClick: async ({ close }) => {
+            const p = pathIn.value.trim();
+            if (!p) return toast('Which directory?', 'error');
+            const r = await checkEnv();
+            if (r.errors?.length) return toast(r.errors[0], 'error');
+            close({ path: p, env: envIn.value.trim() });
+            return undefined;
+          },
+        },
+      ],
+    });
+  };
   const homesList = el('div', { class: 'homes-list' });
   const homesNote = el('div', { class: 'hint homes-note' });
 
@@ -1244,8 +1322,21 @@ async function openSettings() {
       homesList.append(el('div', { class: 'hint', style: 'padding:2px 0', text: `Just the default — ${state.appInfo.tshHome || '~/.tsh'}. Add a directory to read more than one.` }));
     }
     tshHomes.forEach((home, i) => {
+      const nVars = String(tshHomeEnv[home] || '').split('\n').filter((l) => /^\s*(export\s+)?[A-Za-z_]\w*=/.test(l)).length;
       const row = el('div', { class: 'home-row' },
         el('span', { class: 'hpath', text: home, title: home }),
+        el('button', {
+          class: 'ghost-btn sm', text: nVars ? `${nVars} var${nVars === 1 ? '' : 's'}` : 'vars',
+          title: 'Change the path or the variables tsh runs with for this home',
+          onClick: async () => {
+            const r = await homeDialog({ path: home, env: tshHomeEnv[home] || '' });
+            if (!r) return;
+            delete tshHomeEnv[home];
+            if (r.env) tshHomeEnv[r.path] = r.env;
+            tshHomes[i] = r.path;
+            drawHomes();
+          },
+        }),
         el('button', {
           class: 'icon-btn sm', text: '▲', title: 'Earlier — owns a cluster both homes hold',
           disabled: i === 0,
@@ -1266,13 +1357,14 @@ async function openSettings() {
       el('button', {
         class: 'ghost-btn sm', text: 'Add a directory…',
         onClick: async () => {
-          const dirs = await window.api.dialog.openDirs();
-          if (!dirs || !dirs.length) return;
+          const r = await homeDialog();
+          if (!r) return;
           // The list replaces the default rather than adding to it, so the
           // first directory added brings the default along — otherwise the
           // clusters already on screen would quietly disappear.
           if (!tshHomes.length) tshHomes.push(state.appInfo.tshHome || '~/.tsh');
-          for (const d of dirs) if (!tshHomes.includes(d)) tshHomes.push(d);
+          if (!tshHomes.includes(r.path)) tshHomes.push(r.path);
+          if (r.env) tshHomeEnv[r.path] = r.env;
           drawHomes();
         },
       }),
@@ -1470,7 +1562,8 @@ async function openSettings() {
         el('div', { style: 'border-top:1px solid var(--border-soft);margin:14px 0 12px' }),
         el('div', { style: 'font-weight:600;margin:2px 0 6px', text: 'KubeLife' }),
         kubeEnabledIn, kubeEnabledNote,
-        field('Cursor style', cursorStyleIn), shellTitleIn, netIconIn, liveStatsIn, quietIn, quietHint,
+        el('div', { style: 'border-top:1px solid var(--border-soft);margin:14px 0 12px' }),
+        field('Cursor style', cursorStyleIn), shellTitleIn, serverIconIn, netIconIn, liveStatsIn, localStatsIn, onePerTabIn, quietIn, quietHint,
         detectTeleportIn, detectTeleportHint,
         tabActIn, tabActNote,
         linkAskIn, linkAskNote,
@@ -1531,6 +1624,8 @@ async function openSettings() {
         el('div', { style: 'border-top:1px solid var(--border-soft);margin:14px 0 10px' }),
         el('div', { class: 'hint' },
           `tsh: ${state.appInfo.tsh || 'not found'}${state.appInfo.tshVersion ? ' (v' + state.appInfo.tshVersion + ')' : ''}`));
+      // Sections, a dropdown to show one, and a search (settingsnav.js).
+      organizeSettings(body);
     },
     buttons: [
       { label: 'Cancel', value: null },
@@ -1546,6 +1641,8 @@ async function openSettings() {
           connectAnim: animSel.value,
           recentLimit: parseInt(recentSel.value, 10),
           tshHomes,
+          // Only the homes still listed keep their variables.
+          tshHomeEnv: Object.fromEntries(Object.entries(tshHomeEnv).filter(([h, v]) => v && tshHomes.includes(h))),
           refreshSeconds: parseInt(refreshSel.value, 10),
           nodeRefreshSeconds: parseInt(nodeRefreshSel.value, 10),
           staleNodeMinutes: parseInt(staleSel.value, 10),
@@ -1566,7 +1663,10 @@ async function openSettings() {
           highlight: hlIn.input.checked,
           showShellInTitle: shellTitleIn.input.checked,
           showPaneNetIcon: netIconIn.input.checked,
+          showServerIcon: serverIconIn.input.checked,
           liveStats: liveStatsIn.input.checked,
+          ...(localStatsIn ? { localStats: localStatsIn.input.checked } : {}),
+          statsOncePerTab: onePerTabIn.input.checked,
           quietRemote: quietIn.input.checked,
           detectTeleportOnSsh: detectTeleportIn.input.checked,
           showTabActivity: tabActIn.input.checked,
@@ -1604,7 +1704,8 @@ async function openSettings() {
   // Switching the quiet-node warning on or off changes rows that nothing else
   // here would touch: the node lists themselves are unchanged.
   const staleChanged = (state.settings.staleNodeMinutes ?? 2) !== res.staleNodeMinutes
-    || (state.settings.showWatchMark !== false) !== res.showWatchMark;
+    || (state.settings.showWatchMark !== false) !== res.showWatchMark
+    || (state.settings.showServerIcon !== false) !== res.showServerIcon;
   state.settings = await window.api.settings.set(res);
   if (staleChanged) state.emit('inventory');
   applyTheme();

@@ -1685,6 +1685,12 @@ async function startLocalTerm(pane, cwd, opts = {}) {
   pane.status = 'connected';
   pane.view.focus();
   state.emit('tabs');
+  /*
+   * This computer's live stats, under a plain shell — not under a login, a
+   * Phase build or an assistant, which run a program of their own in the tab.
+   */
+  pane.plainShell = !opts.command;
+  if (pane.plainShell) import('./monitor.js').then((m) => m.attachMonitor(pane)).catch(() => {});
 }
 
 /**
@@ -1913,6 +1919,34 @@ function syncPtySize(pane, again = true) {
   if (again) requestAnimationFrame(() => {
     if (state.getPane(pane.id)) syncPtySize(pane, false);
   });
+}
+
+/**
+ * Redraw a muddled terminal — what hiding and showing the file browser used
+ * to do, without the layout jumping.
+ *
+ * Two things go wrong. The renderer's glyph cache can go stale, which the
+ * view's redraw() clears. More often, a program that repaints its own part of
+ * the screen by moving the cursor — Claude Code's input box and spinner, vim,
+ * htop — loses track of where its lines are, most of all in a narrow pane
+ * where long lines wrap, and every repaint lands a little off. A resize is
+ * what makes such a program throw its picture away and draw it whole, so the
+ * session is told one column narrower and then the real width: two resizes,
+ * the second the true size, nothing on screen moves.
+ */
+export function redrawPane(pane) {
+  if (!pane?.view) return;
+  pane.view.redraw();
+  const { cols, rows } = pane.view;
+  // tmux sizes its own windows; redrawing the view is all that is ours to do.
+  if (!pane.termId || pane.kind === 'tmux' || !cols || cols < 3) return;
+  handleResize(pane.id, cols - 1, rows);
+  setTimeout(() => { if (state.getPane(pane.id)) handleResize(pane.id, pane.view.cols, pane.view.rows); }, 150);
+}
+
+/** Every open terminal's picture redrawn — after the computer wakes, when GPU caches are often stale. */
+export function repaintAllTerminals() {
+  for (const p of state.panes.values()) p.view?.redraw?.();
 }
 
 function handleResize(paneId, cols, rows) {
@@ -3692,12 +3726,19 @@ function onPaneContextMenu(e, paneId) {
     },
     { sep: true },
     paneStyleMenu(pane),
-    (pane.kind === 'remote' || pane.kind === 'tmux') && pane.connId ? {
+    ((pane.kind === 'remote' || pane.kind === 'tmux') && pane.connId) || (pane.kind === 'local' && pane.plainShell && ['darwin', 'linux'].includes(state.appInfo?.platform)) ? {
       label: pane.statsBar ? 'Hide live stats' : 'Show live stats', icon: '\u2581',
-      title: 'CPU, memory, disk and network for this host, under the terminal',
+      title: pane.kind === 'local'
+        ? 'CPU, memory, disk and network for this computer, under every local shell — kept off once hidden, until shown again'
+        : 'CPU, memory, disk and network for this host, under the terminal',
       onClick: async () => (await import('./monitor.js')).toggleStatsFor(pane),
     } : null,
     { label: 'Clear', icon: '\u2327', onClick: () => pane.view.clearScreen() },
+    {
+      label: 'Redraw', icon: '\u21BA',
+      title: 'Fix muddled text: repaints the terminal and has the program in it (Claude Code, vim, htop) draw its screen again',
+      onClick: () => redrawPane(pane),
+    },
     {
       label: 'Reconnect', icon: '\u21BB', disabled: pane.kind === 'local',
       onClick: () => reconnectPane(pane),

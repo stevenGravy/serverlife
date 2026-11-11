@@ -5,7 +5,7 @@
  * here; the renderer is sandboxed and reaches it only through preload.
  */
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, clipboard, safeStorage, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, clipboard, safeStorage, screen, powerMonitor } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -55,6 +55,8 @@ const syncdirs = require('./syncdirs');
 const watchdirs = require('./watchdirs');
 const authprobe = require('./authprobe');
 const beams = require('./beams');
+const phasesetup = require('./phasesetup');
+const localmonitor = require('./localmonitor');
 const kube = require('./kube');
 const kubebin = require('./kubebin');
 const kubefs = require('./kubefs');
@@ -1369,7 +1371,7 @@ const vnet = new VnetManager({ findTsh: () => teleport.findTsh(), tshEnv: (home,
 
 /** Settings' tsh variables into the module every tsh is started from. */
 function applyTshEnv(s) {
-  teleport.setEnvSettings({ global: s.tshEnvText || '', clusters: s.clusterTshEnv || {}, inShells: !!s.tshEnvInShells });
+  teleport.setEnvSettings({ global: s.tshEnvText || '', clusters: s.clusterTshEnv || {}, homesEnv: s.tshHomeEnv || {}, inShells: !!s.tshEnvInShells });
 }
 
 function requireConn(id) {
@@ -1441,7 +1443,7 @@ function registerIpc() {
     // it is applied the moment it changes rather than at the next launch.
     if (patch && 'tshHomes' in patch) teleport.setHomes(next.tshHomes);
     if (patch && 'tshPath' in patch) teleport.setTshPath(next.tshPath);
-    if (patch && ('tshEnvText' in patch || 'clusterTshEnv' in patch || 'tshEnvInShells' in patch)) applyTshEnv(next);
+    if (patch && ('tshEnvText' in patch || 'clusterTshEnv' in patch || 'tshHomeEnv' in patch || 'tshEnvInShells' in patch || 'tshHomes' in patch)) applyTshEnv(next);
     if (patch && 'sshPath' in patch) sshbin.setSshPath(next.sshPath);
     return next;
   });
@@ -2695,6 +2697,20 @@ function registerIpc() {
   handle('beams:addSupport', inHome(async (opts) => beams.addSupport(opts || {})));
   // Checking a tsh variables box as it is typed: what it sets, and what it cannot read.
   handle('teleport:parseEnv', async (text) => teleport.parseEnvText(text));
+  // A tsh home as typed — ~, $VAR, ${VAR} — and where it points now, for the Add a tsh home dialog.
+  handle('teleport:resolveHome', async (text) => {
+    const raw = String(text || '').trim();
+    const unset = [...raw.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g)]
+      .map((m) => m[1] || m[2]).filter((n) => !process.env[n]);
+    const resolved = teleport.expandHome(raw);
+    let exists = false;
+    let profiles = 0;
+    if (resolved) {
+      try { exists = fs.statSync(resolved).isDirectory(); } catch { exists = false; }
+      try { profiles = fs.readdirSync(resolved).filter((n) => n.endsWith('.yaml')).length; } catch { profiles = 0; }
+    }
+    return { raw, resolved, exists, profiles, unset };
+  });
   handle('beams:phases', inHome(async (opts) => beams.phases(opts || {})));
   handle('beams:removePhase', inHome(async (opts) => beams.removePhase(opts || {})));
   // What a terminal tab runs for a Phase build — the console needs a real one.
@@ -2706,6 +2722,131 @@ function registerIpc() {
   handle('beams:failedPhases', inHome(async (opts) => beams.failedPhases(opts || {})));
   handle('beams:phaseAddArgs', async (opts) => phaseRun(beams.phaseAddArgs(opts || {}), opts));
   handle('beams:phaseEditArgs', async (opts) => phaseRun(beams.phaseEditArgs(opts || {}), opts));
+  handle('beams:phaseApplyArgs', async (opts) => phaseRun(beams.phaseApplyArgs(opts || {}), opts));
+  handle('beams:phaseSnapshot', inHome(async (opts) => beams.phaseSnapshot(opts || {})));
+  handle('beams:services', inHome(async (opts) => beams.beamServices(opts || {})));
+  handle('beams:serviceLogs', inHome(async (opts) => beams.beamServiceLogs(opts || {})));
+  /*
+   * Phase setups (phasesetup.js): the catalog, a live check of the stages as
+   * they are put together — local files looked for here, where they are —
+   * and the phase.yaml written where tsh can read it. A build gets its own
+   * file under the app's data, kept so the build journal can say what ran.
+   */
+  // Add-ins: a folder of setups of your own (phasesetup.js), read fresh each time — they are a few small files.
+  const addinsDir = () => store.settings.phaseAddinsDir || path.join(app.getPath('userData'), 'phase-addins');
+  const setupCtx = () => ({
+    home: os.homedir(),
+    exists: (p) => { try { fs.accessSync(p); return true; } catch { return false; } },
+    addins: phasesetup.loadAddins(addinsDir()).addins,
+  });
+  handle('phasesetup:catalog', async () => phasesetup.catalog(phasesetup.loadAddins(addinsDir()).addins));
+  handle('phasesetup:build', async (stages) => phasesetup.build(stages || [], setupCtx()));
+  /*
+   * phase.yaml written by hand in the builder: read into stages (to show on
+   * the left, and to check with the same rules), the text itself left as it
+   * was typed — comments, order and all.
+   */
+  const checkHandYaml = (text) => {
+    let parsed;
+    try { parsed = phasesetup.fromYaml(text); } catch (e) { return { ok: false, parsed: false, stages: null, errors: [e.message], warnings: [], incomplete: [] }; }
+    const r = phasesetup.build(parsed.stages, setupCtx());
+    // tsh reads a relative from: against the file's own folder — wherever it is saved — and does not expand ~.
+    const relative = [];
+    try {
+      for (const d of require('js-yaml').loadAll(text)) {
+        for (const f of (d && Array.isArray(d.files) ? d.files : [])) {
+          if (f?.from && !path.isAbsolute(String(f.from))) relative.push(`${d.metadata?.name || 'a stage'}: write "${f.from}" as a full path — tsh reads it relative to wherever the file is saved, and does not expand ~`);
+        }
+      }
+    } catch { /* fromYaml has already said what is wrong with it */ }
+    r.errors.push(...relative);
+    return { ok: !r.errors.length, parsed: true, stages: parsed.stages, errors: r.errors, incomplete: r.incomplete, warnings: [...parsed.warnings, ...r.warnings], names: r.docs.map((d) => d.metadata.name) };
+  };
+  handle('phasesetup:checkYaml', async (text) => checkHandYaml(String(text || '')));
+  handle('phasesetup:write', async ({ stages, file, yaml: handText } = {}) => {
+    if (typeof handText === 'string') {
+      const c = checkHandYaml(handText);
+      if (!c.ok) return { ok: false, errors: c.errors };
+      const target = file || path.join(app.getPath('userData'), 'phase-setups',
+        `${(c.names[0] || 'phase')}-${new Date().toISOString().replace(/[:.]/g, '-')}.yaml`);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, handText.endsWith('\n') ? handText : handText + '\n');
+      return { ok: true, file: target, yaml: handText, stages: c.names };
+    }
+    const r = phasesetup.build(stages || [], setupCtx());
+    if (r.errors.length) return { ok: false, errors: r.errors };
+    const target = file || path.join(app.getPath('userData'), 'phase-setups',
+      `${(r.docs[0]?.metadata?.name || 'phase')}-${new Date().toISOString().replace(/[:.]/g, '-')}.yaml`);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, r.yaml);
+    return { ok: true, file: target, yaml: r.yaml, stages: r.docs.map((d) => d.metadata.name) };
+  });
+  // An existing phase.yaml, to carry on from: picked here, from where the builds are kept unless told otherwise.
+  handle('phasesetup:open', async () => {
+    const dir = path.join(app.getPath('userData'), 'phase-setups');
+    fs.mkdirSync(dir, { recursive: true });
+    const r = await dialog.showOpenDialog(dialogParent(), {
+      title: 'Open a phase.yaml', defaultPath: dir, properties: ['openFile'],
+      filters: [{ name: 'YAML', extensions: ['yaml', 'yml'] }, { name: 'All files', extensions: ['*'] }],
+    });
+    if (r.canceled || !r.filePaths[0]) return null;
+    const file = r.filePaths[0];
+    const text = fs.readFileSync(file, 'utf8');
+    return { file, text, ...phasesetup.fromYaml(text, { dir: path.dirname(file) }) };
+  });
+  /* The add-in manager: list, check as typed, save, delete, and where they live. */
+  const addinFile = (name) => {
+    const base = String(name || '').trim().toLowerCase().replace(/\.ya?ml$/, '');
+    if (!/^[a-z0-9][a-z0-9._-]*$/.test(base)) throw new Error('A file name is lowercase letters, digits, . _ -');
+    return path.join(addinsDir(), base + '.yaml');
+  };
+  const insideAddins = (file) => path.dirname(path.resolve(file)) === path.resolve(addinsDir());
+  handle('phasesetup:addins', async () => {
+    const r = phasesetup.loadAddins(addinsDir());
+    const read = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return ''; } };
+    return {
+      dir: r.dir, custom: !!store.settings.phaseAddinsDir, template: phasesetup.ADDIN_TEMPLATE,
+      addins: r.addins.map((a) => ({ id: a.id, label: a.label, group: a.group, stage: a.stage, file: a.file, text: read(a.file) })),
+      problems: r.problems.map((p) => ({ ...p, text: read(p.file) })),
+    };
+  });
+  handle('phasesetup:checkAddin', async ({ text, name } = {}) => {
+    try {
+      const a = phasesetup.parseAddin(String(text || ''), String(name || 'addin'));
+      // Built with its defaults, as the builder would on adding it: the errors a stage would show.
+      const values = Object.fromEntries(a.fields.map((f) => [f.key, f.default || f.placeholder || 'x']));
+      const kind = a.stage === 'files' ? 'files' : 'commands';
+      const setups = [{ id: a.id, values }];
+      if (a.stage === 'any') setups.push({ id: 'command', values: { shell: 'true' } });
+      const r = phasesetup.build([{ name: 'check', kind, setups }], { ...setupCtx(), addins: [a], exists: () => true });
+      return { ok: !r.errors.length, errors: r.errors.map((e) => e.replace(/^Stage "check", /, '')), label: a.label, stage: a.stage, yaml: r.yaml };
+    } catch (e) { return { ok: false, errors: [e.message] }; }
+  });
+  handle('phasesetup:saveAddin', async ({ name, text, file } = {}) => {
+    const target = file && insideAddins(file) ? file : addinFile(name);
+    phasesetup.parseAddin(String(text || ''), path.basename(target).replace(/\.ya?ml$/, ''));
+    if (!file && fs.existsSync(target)) throw new Error(`${path.basename(target)} is already there — pick another name`);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, String(text));
+    return { ok: true, file: target };
+  });
+  handle('phasesetup:removeAddin', async (file) => {
+    if (!file || !insideAddins(file)) throw new Error('Not an add-in file');
+    fs.rmSync(file, { force: true });
+    return true;
+  });
+  handle('phasesetup:openAddinsDir', async () => {
+    fs.mkdirSync(addinsDir(), { recursive: true });
+    const err = await shell.openPath(addinsDir());
+    return err ? { ok: false, error: err } : { ok: true, dir: addinsDir() };
+  });
+  handle('phasesetup:chooseAddinsDir', async ({ reset } = {}) => {
+    if (reset) { store.updateSettings({ phaseAddinsDir: '' }); return { dir: addinsDir(), custom: false }; }
+    const r = await dialog.showOpenDialog(dialogParent(), { title: 'Folder of Phase add-ins', properties: ['openDirectory', 'createDirectory'], defaultPath: addinsDir() });
+    if (r.canceled || !r.filePaths[0]) return null;
+    store.updateSettings({ phaseAddinsDir: r.filePaths[0] });
+    return { dir: r.filePaths[0], custom: true };
+  });
   handle('beams:remove', inHome(async (opts) => beams.remove(opts || {})));
   handle('beams:stillListed', inHome(async (opts) => beams.stillListed(opts || {})));
   handle('beams:exec', inHome(async (opts) => beams.exec(opts || {})));
@@ -3295,6 +3436,9 @@ function registerIpc() {
     ? { ok: false, reason: 'quiet', error: 'Background commands on servers are off in Settings.' }
     : requireConn(connId).startMonitor(opts || {})));
   handle('conn:stopMonitor', async (connId) => manager.connections.get(connId)?.stopMonitor() || false);
+  // The same bar under a local shell: this computer, sampled here (localmonitor.js), sent as connection "local".
+  handle('local:startMonitor', async (opts) => localmonitor.start(opts || {}, (payload) => send('conn:monitor', 'local', payload)));
+  handle('local:stopMonitor', async () => localmonitor.stop());
   handle('conn:diskSpace', async (connId, p) => (quietRemote() ? null : requireConn(connId).diskSpace(p)));
   handle('conn:shellHistory', async (connId, opts) => requireConn(connId).shellHistory(opts || {}));
 
@@ -3959,6 +4103,9 @@ function wireEvents() {
   manager.on('conn:log', (id, payload) => send('conn:log', id, payload));
   manager.on('conn:info', (id, payload) => send('conn:info', id, payload));
   manager.on('conn:monitor', (id, payload) => send('conn:monitor', id, payload));
+  // Waking from sleep is when the GPU's glyph caches are most often stale: every terminal repaints.
+  powerMonitor.on('resume', () => send('app:resume'));
+  powerMonitor.on('unlock-screen', () => send('app:resume'));
   manager.on('conn:transfers', (id, payload) => send('xfer:update', id, payload));
   manager.on('conn:xferdone', (id, job) => {
     const rows = recordDownloads(job);

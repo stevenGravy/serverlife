@@ -1,3 +1,4 @@
+import { serverIcon } from './hosticons.js';
 import {
   clusterIcon, clusterColor, clusterMarkMenu,
 } from './clustermarks.js';
@@ -3100,13 +3101,21 @@ function phaseRows(p, info) {
   },
     el('span', { class: 'st', style: 'background:var(--accent)' }),
     el('span', { class: 'name', text: first ? '+  Build the first Phase\u2026' : '+  New Phase\u2026' }));
+  // The other way to make one: tools, services and files put together as stages (tsh phase apply).
+  const setupRow = () => el('div', {
+    class: 'sb-item beam-add phase-add',
+    title: 'Pick setups — Go, Postgres, the AWS CLI, your dotfiles, a repo to clone — into a phase.yaml, and build it with tsh phase apply',
+    onClick: async () => (await import('./phasebuilder.js')).openPhaseBuilder(p),
+  },
+    el('span', { class: 'st', style: 'background:var(--accent)' }),
+    el('span', { class: 'name', text: '+  From setups\u2026' }));
   if (!info || (info.loading && !info.phases?.length)) return [note('Reading Phases (tsh phase ls)\u2026')];
-  if (!info.ok) return [note(info.error || 'Could not read the Phases'), addRow(true)];
+  if (!info.ok) return [note(info.error || 'Could not read the Phases'), addRow(true), setupRow()];
   const all = info.phases || [];
   const list = filterText
     ? all.filter((x) => JSON.stringify(x).toLowerCase().includes(filterText.toLowerCase()))
     : all;
-  if (!all.length) return [note('No Phases yet.'), addRow(true)];
+  if (!all.length) return [note('No Phases yet.'), addRow(true), setupRow()];
   if (!list.length) return [note('No Phase matches the filter.')];
 
   const groupKey = phaseGroupKeyFor(p);
@@ -3136,7 +3145,10 @@ function phaseRows(p, info) {
   const lastPhaseRow = addRow(false);
   lastPhaseRow.style.flex = '1';
   lastPhaseRow.style.minWidth = '0';
-  rows.push(el('div', { style: 'display:flex;gap:6px' }, addFolderRow, lastPhaseRow));
+  const lastSetupRow = setupRow();
+  lastSetupRow.style.flex = '1';
+  lastSetupRow.style.minWidth = '0';
+  rows.push(el('div', { style: 'display:flex;gap:6px' }, addFolderRow, lastPhaseRow, lastSetupRow));
   return rows;
 }
 
@@ -3312,6 +3324,12 @@ function kubeClusterHostRow(host, groupKey, opts = {}) {
   // branch anywhere in folders.js or tags.js.
   const watched = showWatchMark() && isWatched(host);
   const rowOpts = { depth: opts.depth, folder: opts.folder, groupKey, watched };
+  /*
+   * A watched cluster that has gone, or whose cluster cannot be read right
+   * now, is drawn from its watch record like any other ghost — the gone or
+   * not-confirmed tag, its menu — with the ☸ hostRow gives a kube one.
+   */
+  if (host.missing || host.unconfirmed) return hostRow(host, labelSummary(host), groupKey, opts);   // hostRow draws it, not back here
   let node;
   if (host.requestable) node = kubeRequestableRow(host, groupKey, opts, watched);
   else if (host.kubeContext) node = kubeContextRow(host.kubeContext, rowOpts);
@@ -3343,7 +3361,8 @@ function hostRow(host, labelText, groupKey = null, opts = {}) {
   // the tree, the labels, the exec/logs menu — is nothing like an SSH
   // host's, so it is drawn by kubepanel.js and none of the rest of this
   // function ever runs for one.
-  if (host.kind === 'kube') return kubeClusterHostRow(host, groupKey, opts);
+  // …except a watched one drawn from its record (gone, or not confirmed): that is a ghost row like any other.
+  if (host.kind === 'kube' && !host.missing && !host.unconfirmed) return kubeClusterHostRow(host, groupKey, opts);
   // Remembered so a tick in the multi-exec checkbox can be resolved back to
   // the host it was ticked on — including a ghost drawn from a watch
   // record, which `hostById` does not search. Cleared and refilled on every
@@ -3441,6 +3460,8 @@ function hostRow(host, labelText, groupKey = null, opts = {}) {
      */
     el('span', { class: 'nwrap' },
       el('span', { class: 'name', text: host.name || host.alias }),
+      // What kind of thing it is: ☸ for a Kubernetes cluster drawn here (a watched one gone missing), a server otherwise.
+      host.kind === 'kube' ? kubeIcon() : serverIcon(host.type === 'teleport' ? 'Teleport SSH server' : 'SSH server'),
       icon ? el('span', { class: 'hico', title: 'Right-click → Icon… to change it', text: icon }) : null,
       /*
        * Two nodes answering to one hostname. The row is otherwise identical

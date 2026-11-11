@@ -142,8 +142,24 @@ const DEFAULT_HOME = process.env.TELEPORT_HOME || path.join(os.homedir(), '.tsh'
 let homes = [];                   // configured directories, in order
 const homeByProxy = new Map();    // proxy -> home that holds it
 
+/**
+ * A home as written in Settings, made a real path: `~`, and `$NAME` or
+ * `${NAME}` from the app's environment — `$TELEPORT_HOME`, `${WORK}/.tsh` —
+ * read each time, so a variable that changes moves the home with it. One that
+ * names an unset variable is no path at all ('') rather than wherever the
+ * leftover text happens to resolve.
+ */
 function expandHome(p) {
-  const raw = String(p || '').trim();
+  let raw = String(p || '').trim();
+  if (!raw) return '';
+  let missing = false;
+  raw = raw.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (_m, a, b) => {
+    const v = process.env[a || b];
+    if (v === undefined || v === '') missing = true;
+    return v || '';
+  });
+  if (missing) return '';
+  raw = raw.trim();
   if (!raw) return '';
   if (raw === '~') return os.homedir();
   if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
@@ -210,6 +226,7 @@ function homeForProxy(proxy) {
  */
 let envGlobal = {};
 let envByCluster = {};          // bare proxy -> { NAME: value }
+let envByHome = {};             // expanded tsh home -> { NAME: value }
 let envInShells = false;
 
 /** `corp.example.com:443`, `https://corp.example.com/web` → `corp.example.com`. */
@@ -236,9 +253,16 @@ function parseEnvText(text) {
   return { vars, errors };
 }
 
-/** From settings: `tshEnvText`, `clusterTshEnv` (proxy → text) and `tshEnvInShells`. */
-function setEnvSettings({ global = '', clusters = {}, inShells = false } = {}) {
+/** From settings: `tshEnvText`, `clusterTshEnv` (proxy → text), `tshHomeEnv` (home → text) and `tshEnvInShells`. */
+function setEnvSettings({ global = '', clusters = {}, homesEnv = {}, inShells = false } = {}) {
   envGlobal = parseEnvText(global).vars;
+  envByHome = {};
+  // Keyed by the path as written; matched by where it points now.
+  for (const [home, text] of Object.entries(homesEnv || {})) {
+    const vars = parseEnvText(text).vars;
+    const h = expandHome(home);
+    if (h && Object.keys(vars).length) envByHome[h] = vars;
+  }
   envByCluster = {};
   for (const [proxy, text] of Object.entries(clusters || {})) {
     const vars = parseEnvText(text).vars;
@@ -278,8 +302,8 @@ function tshEnv(home, proxy = null) {
    * binary: one the app found on its own keeps the updates, and anyone who
    * sets TELEPORT_TOOLS_VERSION themselves keeps their own value.
    */
-  // The variables set in Settings, for every cluster and then this one.
-  Object.assign(env, envFor(proxy));
+  // The variables set in Settings: for every cluster, then this home's, then this cluster's.
+  Object.assign(env, envGlobal, envByHome[env.TELEPORT_HOME || DEFAULT_HOME] || {}, proxy ? envByCluster[bareProxy(proxy)] || {} : {});
   // A chosen tsh runs as itself — unless a tools version was asked for, by
   // the person's environment or by the variables above, which then decides.
   if (chosenTsh() && env.TELEPORT_TOOLS_VERSION === undefined) env.TELEPORT_TOOLS_VERSION = 'off';
@@ -2123,7 +2147,7 @@ function profileFiles({ proxy, home } = {}) {
 }
 
 module.exports = {
-  markCurrentProfile,
+  markCurrentProfile, expandHome,
   findTsh, version, compatibility, parseVersionWarning, versionInfo, compatFor,
   status, statusText, listNodes, listClusters, isLeafCluster, writeClusterSshConfig,
   removeProfile, profileFiles,

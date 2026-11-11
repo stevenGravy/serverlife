@@ -3,6 +3,7 @@ import { EditorState } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
 import { yaml as yamlLang } from '@codemirror/lang-yaml';
+import { appEditorTheme } from './cmtheme.js';
 import { el } from './util.js';
 import { modal, toast } from './ui.js';
 
@@ -105,7 +106,7 @@ function createKubeconfigEditor(value) {
     state: EditorState.create({
       doc: value,
       extensions: [
-        basicSetup, keymap.of([indentWithTab]), EditorState.tabSize.of(2), yamlLang(),
+        basicSetup, keymap.of([indentWithTab]), EditorState.tabSize.of(2), yamlLang(), appEditorTheme,
         EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { overflow: 'auto', fontFamily: 'var(--mono)', fontSize: '12px' } }),
       ],
     }),

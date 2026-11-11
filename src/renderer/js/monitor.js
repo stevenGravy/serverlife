@@ -14,6 +14,11 @@ import { el, fmtBytes } from './util.js';
  * would ask for an approval, so the bar says it is off there and asks for
  * nothing. Off everywhere with Settings → "Live stats under each server
  * session", or for one host from the pane's menu.
+ *
+ * A local shell on macOS or Linux has the same bar for this computer, read
+ * by the main process rather than a command (main/localmonitor.js) and sent
+ * as the connection "local". Hiding it from a local pane's menu is kept
+ * (settings.localStats) — it is the same computer every time.
  */
 
 const HISTORY = 40;                 // samples kept for the CPU sparkline
@@ -30,34 +35,55 @@ function monFor(connId) {
   return mons.get(connId);
 }
 
-/** Start (or join) the monitor for a remote pane, and give it its bar. */
 /** A server session or a tmux pane on one: both ride a connection to the host. */
 const onAHost = (pane) => (pane?.kind === 'remote' || pane?.kind === 'tmux') && !!pane.connId;
+const LOCAL = 'local';
+/** A plain local shell, where this computer can be read: macOS and Linux. */
+const isLocal = (pane) => pane?.kind === 'local' && !!pane.plainShell && ['darwin', 'linux'].includes(state.appInfo?.platform);
+const monitored = (pane) => onAHost(pane) || isLocal(pane);
+const keyOf = (pane) => (isLocal(pane) ? LOCAL : pane.connId);
+// No background commands on servers does not touch this computer; the stats switch and a hidden local bar do.
+const localStatsEnabled = () => state.settings?.liveStats !== false && state.settings?.localStats !== false;
+const enabledFor = (pane) => (isLocal(pane) ? localStatsEnabled() : liveStatsEnabled() && !hiddenConns.has(pane.connId));
+/*
+ * Settings → "One live stats bar per machine in a tab": split panes on the
+ * same host (or several local shells) in one tab show one bar between them,
+ * on the first; the others give the terminal that row back. Off by default.
+ */
+const onePerTab = () => state.settings?.statsOncePerTab === true;
+const shownInTab = (pane, key) => [...state.panes.values()].some((p) => p !== pane && p.tabId === pane.tabId && p.statsBar && keyOf(p) === key);
 
+/** Start (or join) the monitor for a pane, and give it its bar. */
 export async function attachMonitor(pane) {
-  if (!onAHost(pane)) return;
-  if (!liveStatsEnabled() || hiddenConns.has(pane.connId)) return;
+  if (!monitored(pane) || !enabledFor(pane)) return;
+  const key = keyOf(pane);
+  if (!pane.statsBar && onePerTab() && shownInTab(pane, key)) return;
   // Already showing: a reconnect restarts a monitor the drop ended.
   if (pane.statsBar) {
-    const m = mons.get(pane.connId);
-    if (m && m.status === 'ended') await start(pane.connId, m);
+    const m = mons.get(key);
+    if (m && m.status === 'ended') await start(key, m);
     return;
   }
-  const m = monFor(pane.connId);
+  const m = monFor(key);
   m.panes.add(pane);
-  pane.statsBar = el('div', { class: 'pane-stats', title: 'Live stats for this host — right-click the pane to hide them' });
+  pane.statsBar = el('div', {
+    class: 'pane-stats' + (key === LOCAL ? ' local' : ''),
+    title: key === LOCAL ? 'Live stats for this computer — right-click the pane to hide them' : 'Live stats for this host — right-click the pane to hide them',
+  });
   pane.element.append(pane.statsBar);
   // The terminal lost a row of height to the bar.
   requestAnimationFrame(() => pane.view?.fitNow?.());
   draw(m);
-  if (m.status === 'idle' || m.status === 'ended') await start(pane.connId, m);
+  if (m.status === 'idle' || m.status === 'ended') await start(key, m);
 }
 
 async function start(connId, m) {
   m.status = 'starting';
   m.error = '';
   draw(m);
-  const r = await window.api.conn.startMonitor(connId, { interval: 5 }).catch((e) => ({ ok: false, error: e.message }));
+  const r = await (connId === LOCAL
+    ? window.api.conn.startLocalMonitor({ interval: 5 })
+    : window.api.conn.startMonitor(connId, { interval: 5 })).catch((e) => ({ ok: false, error: e.message }));
   if (!r?.ok) {
     m.status = r?.reason === 'mfa' ? 'mfa' : 'ended';
     m.error = r?.error || 'Could not start live stats';
@@ -72,17 +98,30 @@ export function detachMonitor(pane) {
   pane.statsBar = null;
   // A pane tmux has just removed has no terminal left to refit.
   requestAnimationFrame(() => { try { pane.view?.fitNow?.(); } catch { /* disposed */ } });
-  const m = mons.get(pane.connId);
+  const key = [...mons.entries()].find(([, mon]) => mon.panes.has(pane))?.[0];
+  const m = key && mons.get(key);
   if (!m) return;
   m.panes.delete(pane);
+  // One bar per machine in a tab: the next pane on it takes the bar over — unless the bar is being hidden.
+  if (onePerTab() && enabledFor(pane)) {
+    const next = [...state.panes.values()].find((p) => p !== pane && p.tabId === pane.tabId && !p.statsBar && monitored(p) && keyOf(p) === key);
+    if (next) { attachMonitor(next); return; }
+  }
   if (!m.panes.size) {
-    window.api.conn.stopMonitor(pane.connId).catch(() => {});
-    mons.delete(pane.connId);
+    (key === LOCAL ? window.api.conn.stopLocalMonitor() : window.api.conn.stopMonitor(key)).catch(() => {});
+    mons.delete(key);
   }
 }
 
 /** Hide or show the bar for every pane on this pane's host, until restart. */
-export function toggleStatsFor(pane) {
+export async function toggleStatsFor(pane) {
+  if (isLocal(pane)) {
+    // Every local shell at once, and remembered: it is this computer each time.
+    const showing = !!pane.statsBar;
+    state.settings = await window.api.settings.set({ localStats: !showing });
+    for (const p of state.panes.values()) if (isLocal(p)) (showing ? detachMonitor(p) : attachMonitor(p));
+    return;
+  }
   if (!pane?.connId) return;
   const panes = [...state.panes.values()].filter((p) => p.connId === pane.connId);
   if (pane.statsBar) {
@@ -96,11 +135,13 @@ export function toggleStatsFor(pane) {
 
 /** Settings changed: bring every remote pane in line with the switch. */
 export function applyLiveStatsSetting() {
-  for (const p of state.panes.values()) {
-    if (!onAHost(p)) continue;
-    if (liveStatsEnabled()) attachMonitor(p);
-    else detachMonitor(p);
+  const panes = [...state.panes.values()].filter(monitored);
+  for (const p of panes) {
+    // Turned on: the extra bars in a tab go first, so the first pane keeps its own.
+    const extra = onePerTab() && p.statsBar && panes.some((q) => q !== p && q.tabId === p.tabId && q.statsBar && keyOf(q) === keyOf(p) && panes.indexOf(q) < panes.indexOf(p));
+    if (!enabledFor(p) || extra) detachMonitor(p);
   }
+  for (const p of panes) if (enabledFor(p)) attachMonitor(p);
 }
 
 export function initMonitor() {

@@ -4,6 +4,7 @@ import { keymap } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
 import { StreamLanguage } from '@codemirror/language';
 import sshoptions from '../../main/sshoptions.js';
+import { appEditorTheme } from './cmtheme.js';
 
 /*
  * ssh_config, coloured: what a line *is* at a glance — a Host or Match line
@@ -61,6 +62,7 @@ export function createSshConfigEditor({ value = '' } = {}) {
         keymap.of([indentWithTab]),
         EditorState.tabSize.of(2),
         sshConfigLanguage,
+        appEditorTheme,
         EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { overflow: 'auto', fontFamily: 'var(--mono)', fontSize: '12px' } }),
       ],
     }),

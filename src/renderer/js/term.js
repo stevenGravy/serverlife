@@ -253,6 +253,17 @@ export class TermView {
     this._dprQuery.addEventListener('change', this._onDpr);
   }
 
+  /**
+   * Start the picture over: the glyph atlas thrown away (a stale one draws
+   * the wrong glyphs), the size measured again, and every row painted.
+   */
+  redraw() {
+    if (this.disposed) return;
+    try { this.webgl?.clearTextureAtlas(); } catch { /* no WebGL atlas to clear */ }
+    this.fitNow();
+    this.repaint();
+  }
+
   /** Redraw every visible row, after something the renderer cannot see. */
   repaint() {
     if (this.disposed) return;

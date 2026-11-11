@@ -259,6 +259,9 @@ async function openSettingAt(q) {
     await new Promise((r) => setTimeout(r, 50));
     const labels = [...document.querySelectorAll('.modal label, .modal h3, .modal h4, .modal .hint')];
     if (!labels.length) continue;
+    // Settings has its own search now: open it filtered to what was asked for.
+    const own = document.querySelector('.modal .settings-nav input');
+    if (own) { own.value = q; own.dispatchEvent(new Event('input', { bubbles: true })); }
     const hit = labels.find((l) => l.textContent.toLowerCase().includes(needle));
     if (!hit) { status(`No setting mentions “${q}”`); return; }
     const row = hit.closest('.field') || hit;

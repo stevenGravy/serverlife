@@ -4,6 +4,7 @@ import { yaml as yamlLang } from '@codemirror/lang-yaml';
 import { linter, lintGutter } from '@codemirror/lint';
 import { autocompletion } from '@codemirror/autocomplete';
 import { inferYamlPath, topLevelKind } from './yamlpath.js';
+import { appEditorTheme } from './cmtheme.js';
 
 /**
  * Replaces the plain `<textarea>` `textModal()` used to show and edit
@@ -32,7 +33,7 @@ export function createYamlEditor({ value = '', readOnly = false, spec = null, la
     return fields;
   }
 
-  const extensions = [basicSetup, EditorState.readOnly.of(!!readOnly)];
+  const extensions = [basicSetup, appEditorTheme, EditorState.readOnly.of(!!readOnly)];
   if (lang === 'yaml') extensions.push(yamlLang());
 
   if (lang === 'yaml' && !readOnly) {

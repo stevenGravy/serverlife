@@ -56,9 +56,10 @@ if (!body || !body.length) {
 } else if (body.length <= maxLines) {
   out.push(...body);
 } else {
-  // Cut at a blank line so the notes do not end mid-bullet.
+  // Cut where a bullet starts or at a blank line, so the notes do not end
+  // mid-bullet — the changelog's bullets have no blank lines between them.
   let cut = maxLines;
-  while (cut > 10 && body[cut].trim()) cut--;
+  while (cut > 10 && body[cut].trim() && !/^- /.test(body[cut])) cut--;
   const kept = body.slice(0, cut);
   // A cut landing right after a `### Fixed` leaves a heading with nothing under
   // it, which reads like content went missing rather than being linked to.

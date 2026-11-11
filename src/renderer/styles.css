@@ -4201,3 +4201,25 @@ input.needed, textarea.needed {
 /* The pane header's Teleport button, on a session whose host has no agent yet. */
 .pane-head .pteleport { color: var(--accent); font-weight: 700; }
 .pane-head .pteleport:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+
+/* The server mark beside an SSH or Teleport host's name (hosticons.js), the ☸'s counterpart. */
+.srv-ico {
+  display: inline-flex; align-items: center; flex: none;
+  color: var(--text-dim); opacity: .8; margin-left: 4px;
+}
+.srv-ico svg { display: block; }
+.sb-item.missing .srv-ico, .sb-item.missing .kube-ico { opacity: .55; }
+
+/* Settings: the section dropdown and search, kept in view (settingsnav.js). */
+.settings-nav {
+  position: sticky; top: -14px; z-index: 2;
+  display: flex; gap: 8px; align-items: center;
+  margin: -14px 0 10px; padding: 14px 0 8px;
+  background: var(--panel); border-bottom: 1px solid var(--border-soft);
+}
+.settings-nav select { max-width: 46%; }
+.settings-section + .settings-section { border-top: 1px solid var(--border-soft); margin-top: 14px; padding-top: 12px; }
+.settings-section-title {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 8px;
+}

@@ -45,7 +45,7 @@ async function readDialog(tshPath) {
       const roles = byLabel('Delegate roles');
       return {
         labels: fields.map((f) => f.querySelector('label')?.textContent || ''),
-        phases: phase ? [...phase.querySelectorAll('option')].map((o) => o.value) : null,
+        phases: phase ? [...phase.querySelectorAll('.phase-pick .name')].map((o) => o.textContent) : null,
         phaseNote: m.querySelector('.hint')?.textContent || '',
         roles: roles ? [...roles.querySelectorAll('label.check span')].map((s) => s.textContent) : null,
       };
@@ -83,7 +83,7 @@ try {
       console.log(`  ${v}: ${JSON.stringify(seen)}`);
       t.check(`${v}: offers Phases, the standard image first`, () => {
         assert.ok(seen.phases, `no Start from field — ${seen.phaseNote}`);
-        assert.equal(seen.phases[0], '');
+        assert.equal(seen.phases[0], 'The standard image');
         assert.ok(seen.phases.length > 1, 'no Phase listed');
       });
       t.check(`${v}: offers this login's roles to delegate`, () => {

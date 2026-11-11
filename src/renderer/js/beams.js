@@ -2,6 +2,7 @@ import { state } from './state.js';
 import { el } from './util.js';
 import { modal, toast, status, confirm, field, textInput, select, checkbox, contextMenu } from './ui.js';
 import { openHost, splitActivePane } from './sessions.js';
+import { phasePicker } from './phasepicker.js';
 
 /**
  * Beams: ephemeral sandbox VMs, listed and driven from the host list.
@@ -19,7 +20,7 @@ import { openHost, splitActivePane } from './sessions.js';
  */
 
 /** Regions offered when starting one. Blank lets the service choose. */
-const REGIONS = [
+export const REGIONS = [
   { value: '', label: 'Wherever the cluster puts it' },
   { value: 'us-east-1', label: 'us-east-1' },
   { value: 'us-east-2', label: 'us-east-2' },
@@ -262,7 +263,7 @@ function originOf(proxy, name) {
  * failure. A Phase saved since the build started is a success; one marked
  * failed brings its own error and the way to look inside it.
  */
-async function runPhaseBuild(profile, run, title, meta) {
+export async function runPhaseBuild(profile, run, title, meta) {
   const { openLocalShell } = await import('./sessions.js');
   const before = new Set((phaseListFor(profile.proxy)?.phases || []).map((p) => p.name));
   const entry = {
@@ -313,7 +314,6 @@ async function runPhaseBuild(profile, run, title, meta) {
  */
 export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
   const opts = { proxy: profile.proxy, home: profile.homeDir };
-  const known = (phaseListFor(profile.proxy)?.phases || []).filter((p) => p.state === 'ready').map((p) => p.name);
   const nameIn = textInput({ placeholder: 'Leave empty and tsh picks a name' });
   const modeSel = select([
     { value: 'base', label: 'The default base image' },
@@ -325,10 +325,34 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
    * recipe tsh runs and streams the log of. A fork starts from saved files,
    * so it is always a console.
    */
+  const can = (await window.api.beams.addSupport(opts).catch(() => null)) || {};
   const buildSel = select([
     { value: 'console', label: 'In an interactive build console' },
     { value: 'file', label: 'From a command file (--commands-file)' },
-  ], 'console');
+    can.copy ? { value: 'copy', label: 'Copy files from this computer (--copy)' } : null,
+  ].filter(Boolean), 'console');
+  // Copied files: local source and where it goes, one row each.
+  const copyRows = [];
+  const copyList = el('div', { style: 'display:flex;flex-direction:column;gap:6px' });
+  const addCopyRow = (from = '', to = '') => {
+    const fromIn = textInput({ value: from, placeholder: '/local/path/config' });
+    const toIn = textInput({ value: to, placeholder: '/opt/app/config' });
+    const row = { fromIn, toIn };
+    copyRows.push(row);
+    const line = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr auto auto;gap:6px' }, fromIn, toIn,
+      el('button', { class: 'ghost-btn sm', type: 'button', text: 'Browse…', onClick: async () => {
+        const f = await window.api.dialog.openFiles({ single: true, title: 'A file to copy into the Phase' });
+        if (f && f[0]) { fromIn.value = f[0]; sync(); }
+      } }),
+      el('button', { class: 'ghost-btn sm', type: 'button', text: '✕', onClick: () => { copyRows.splice(copyRows.indexOf(row), 1); line.remove(); sync(); } }));
+    for (const n of [fromIn, toIn]) n.addEventListener('input', () => sync());
+    copyList.append(line);
+  };
+  const copyField = field('Files to copy', el('div', {}, copyList,
+    el('button', { class: 'ghost-btn sm', type: 'button', text: '+ Another file', style: 'margin-top:6px', onClick: () => { addCopyRow(); sync(); } })),
+  'From this computer (left) to an absolute path in the image outside /home (right). A folder merges into its destination.');
+  addCopyRow();
+  const noConsoleBox = can.noConsole ? checkbox("Don't open a console — start the build and come back to it", false) : null;
   const fileIn = textInput({ placeholder: '/path/to/build.yaml' });
   const fileField = field('Command file', el('div', {},
     fileIn,
@@ -342,13 +366,15 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
   'Commands run in order as root, outside /home. Each takes command and args (and optionally env, '
     + 'workdir, comment) — e.g. command: /bin/sh, args: [-c, "apt-get install -y git"]. '
     + 'shell: is only for tsh phase apply files.');
-  // Typed rather than picked, as well: --from takes an upstream image such as
+  // Typed as well as picked: --from takes an upstream image such as
   // default:v1, and either takes name@sha256:digest for one exact snapshot.
-  const listId = 'phase-sources-' + Math.random().toString(36).slice(2);
-  const sourceIn = textInput({ value: source, placeholder: 'A Phase, or name@sha256:digest', list: listId });
-  const sourceList = el('datalist', { id: listId }, ...known.map((n) => el('option', { value: n })));
-  const sourceField = field('Phase', el('div', {}, sourceIn, sourceList),
-    'Pick one of yours or type any Phase, upstream image (default:v1) or exact snapshot.');
+  const sourceIn = phasePicker({
+    profile, typed: true, value: source,
+    phases: (phaseListFor(profile.proxy)?.phases || []).filter((p) => p.state === 'ready'),
+    onChange: () => sync(),
+  });
+  const sourceField = field('Phase', sourceIn.el,
+    'Pick one of yours — your folders, or search — or type any Phase, upstream image (default:v1) or exact snapshot.');
   const myRoles = (await window.api.beams.addSupport(opts).catch(() => null))?.roles
     ? [...(profile.roles || [])].sort() : [];
   const roleBoxes = myRoles.map((r) => checkbox(r, false));
@@ -365,6 +391,9 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
       from: m === 'from' ? sourceIn.value.trim() || undefined : undefined,
       forkFrom: m === 'fork' ? sourceIn.value.trim() || undefined : undefined,
       commandsFile: m !== 'fork' && buildSel.value === 'file' ? fileIn.value.trim() || undefined : undefined,
+      copies: m !== 'fork' && buildSel.value === 'copy'
+        ? copyRows.map((r) => ({ from: r.fromIn.value.trim(), to: r.toIn.value.trim() })).filter((c) => c.from || c.to) : undefined,
+      noConsole: noConsoleBox?.input.checked || undefined,
       roles: myRoles.filter((r, i) => roleBoxes[i].input.checked),
       region: regionSel.value || undefined,
     };
@@ -375,26 +404,45 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
     buildSel.disabled = modeSel.value === 'fork';
     if (modeSel.value === 'fork') buildSel.value = 'console';
     fileField.classList.toggle('hidden', buildSel.value !== 'file');
+    copyField.classList.toggle('hidden', buildSel.value !== 'copy');
     try {
       const r = await window.api.beams.phaseAddArgs(collect());
       preview.textContent = ['tsh', ...r.args].join(' ');
     } catch (e) { preview.textContent = e.message; }
   };
-  for (const n of [nameIn, sourceIn, fileIn]) n.addEventListener('input', sync);
+  for (const n of [nameIn, fileIn]) n.addEventListener('input', sync);
   for (const n of [modeSel, regionSel, buildSel]) n.addEventListener('change', sync);
   for (const b of roleBoxes) b.input.addEventListener('change', sync);
+  noConsoleBox?.input.addEventListener('change', sync);
 
   const res = await modal({
     title: 'New Phase',
     subtitle: profile.cluster || profile.proxy,
     width: 'min(560px, 94vw)',
-    render: (body) => {
+    render: (body, { close }) => {
+      /*
+       * The other way to make one: tools, services and files picked as
+       * setups and built with tsh phase apply — said here, where someone
+       * about to install things by hand in a console would want to know.
+       */
+      const builderNote = can.apply ? el('div', {
+        class: 'hint', style: 'margin:0 0 10px;padding:7px 9px;border:1px solid var(--border);border-radius:var(--radius);background:var(--panel-2)',
+      },
+        'Installing tools or services? Pick them as setups — Go, Postgres, cloud CLIs, your dotfiles — and they are rebuilt for you. ',
+        el('button', {
+          class: 'ghost-btn sm', type: 'button', text: 'Build it from setups instead\u2026',
+          title: 'Build a Phase from setups (tsh phase apply)',
+          onClick: () => close({ switchToBuilder: true, from: modeSel.value === 'from' ? sourceIn.value.trim() : '' }),
+        })) : null;
       body.append(...[
+        builderNote,
         field('Name', nameIn),
         field('Start from', modeSel),
         sourceField,
         field('Build it', buildSel),
         fileField,
+        copyField,
+        noConsoleBox,
         myRoles.length
           ? field('Delegate roles', el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 14px' }, ...roleBoxes),
             'The roles its builds may act as. None ticked: your own delegation permissions.')
@@ -415,6 +463,7 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
           const v = collect();
           if (modeSel.value !== 'base' && !v.from && !v.forkFrom) return toast('Which Phase?', 'error');
           if (buildSel.value === 'file' && modeSel.value !== 'fork' && !v.commandsFile) return toast('Which command file?', 'error');
+          if (buildSel.value === 'copy' && modeSel.value !== 'fork' && !v.copies?.length) return toast('Which files?', 'error');
           close(v);
           return undefined;
         },
@@ -422,6 +471,7 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
     ],
   });
   if (!res) return false;
+  if (res.switchToBuilder) return (await import('./phasebuilder.js')).openPhaseBuilder(profile, { from: res.from || '' });
   let run;
   try { run = await window.api.beams.phaseAddArgs(res); } catch (e) { toast(e.message, 'error'); return false; }
   const what = res.forkFrom ? `fork of ${res.forkFrom}` : res.from ? `on ${res.from}` : 'new';
@@ -429,8 +479,117 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
     kind: 'add', name: res.name || '',
     mode: res.forkFrom ? 'fork' : res.from ? 'from' : 'base',
     source: res.forkFrom || res.from || '', commandsFile: res.commandsFile || '',
-    roles: res.roles || [], region: res.region || '',
+    copies: res.copies || [], roles: res.roles || [], region: res.region || '',
   });
+}
+
+/**
+ * Replace what a command or copy Phase is built from: a new command file
+ * (`tsh phase edit --commands-file`), or its files copied again
+ * (`--copy`). Either rebuilds it; its children follow.
+ */
+export async function replacePhaseInputs(profile, phase) {
+  const copy = phase.strategy === 'copy';
+  let opts = {};
+  if (copy) {
+    const rows = await new Promise((resolve) => {
+      const list = el('div', { style: 'display:flex;flex-direction:column;gap:6px' });
+      const rowsAt = [];
+      const add = () => {
+        const fromIn = textInput({ placeholder: '/local/path' });
+        const toIn = textInput({ placeholder: '/opt/app/config' });
+        rowsAt.push({ fromIn, toIn });
+        list.append(el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:6px' }, fromIn, toIn));
+      };
+      add();
+      modal({
+        title: `Copy files into ${phase.name} again`,
+        width: 'min(620px, 94vw)',
+        render: (body) => body.append(
+          el('div', { class: 'hint', style: 'margin-bottom:8px', text: 'The new copy starts from its parent, not from the files it has now: list every file it should keep.' }),
+          list, el('button', { class: 'ghost-btn sm', type: 'button', text: '+ Another file', style: 'margin-top:6px', onClick: add })),
+        buttons: [
+          { label: 'Cancel', value: null },
+          { label: 'Copy and rebuild', class: 'primary-btn', onClick: ({ close }) => close(rowsAt.map((r) => ({ from: r.fromIn.value.trim(), to: r.toIn.value.trim() })).filter((c) => c.from || c.to)) },
+        ],
+      }).then(resolve);
+    });
+    if (!rows || !rows.length) return false;
+    opts = { copies: rows };
+  } else {
+    const f = await window.api.dialog.openFiles({ single: true, title: `A new command file for ${phase.name} (YAML)` });
+    if (!f || !f[0]) return false;
+    opts = { commandsFile: f[0] };
+  }
+  let run;
+  try { run = await window.api.beams.phaseEditArgs({ proxy: profile.proxy, home: profile.homeDir, name: phase.name, ...opts }); }
+  catch (e) { toast(e.message, 'error'); return false; }
+  return runPhaseBuild(profile, run, `Phase edit · ${phase.name}`, { kind: 'edit', name: phase.name, mode: 'edit', commandsFile: opts.commandsFile || '', copies: opts.copies || [] });
+}
+
+/**
+ * Save, or save and finish, a Phase's running build — `tsh phase snapshot`
+ * inside its build Beam. Whether it was saved is read back from the Phase,
+ * since --final ends the Beam the command ran in.
+ */
+export async function snapshotBuild(profile, phase, { final = false, force = false } = {}) {
+  if (!phase.buildBeam) return toast(`${phase.name} has no build running`, 'error');
+  if (final && !await confirm({
+    title: `Save ${phase.name} and end its build?`,
+    message: 'Saves a snapshot, then ends the build Beam. Anything changed after the snapshot is lost.',
+    detail: force ? 'Changes outside /home are left out of the snapshot.' : 'If it changed files outside /home, it refuses and nothing is saved.',
+    confirmLabel: 'Save and finish',
+  })) return false;
+  status(`${final ? 'Saving and finishing' : 'Saving'} ${phase.name}…`, 60000);
+  const before = phase.publishedAt || 0;
+  const r = await window.api.beams.phaseSnapshot({ proxy: profile.proxy, home: profile.homeDir, beam: phase.buildBeam, final, force });
+  await refreshPhases(profile).catch(() => {});
+  const now = (phaseListFor(profile.proxy)?.phases || []).find((p) => p.name === phase.name);
+  if ((now?.publishedAt || 0) > before || (r.ok && !final)) {
+    toast(`Saved ${phase.name}${final ? ' and ended its build' : ''}`, 'success', 8000);
+    return true;
+  }
+  // The usual refusal: files changed outside /home. Offer the way past it.
+  if (/outside \/home|--force/i.test(r.output || '') && !force) {
+    if (await confirm({ title: 'Changes outside /home', message: 'The snapshot was refused because files outside /home changed.', detail: (r.output || '').slice(-1200), confirmLabel: 'Save without them (--force)' })) {
+      return snapshotBuild(profile, phase, { final, force: true });
+    }
+    return false;
+  }
+  toast(`Not saved: ${(r.output || 'tsh phase snapshot said nothing').slice(-600)}`, 'error', 15000);
+  return false;
+}
+
+/** The services running in a Beam — from its Phase's services: — and each one's log. */
+export async function showBeamServices(beam) {
+  const opts = { proxy: beam.proxy, home: beam.home || undefined, name: beam.id };
+  const r = await window.api.beams.services(opts);
+  if (!r.ok) return toast(r.error || 'Could not read its services', 'error', 9000);
+  const logBox = el('pre', {
+    style: 'font-family:var(--mono);font-size:11px;white-space:pre-wrap;max-height:42vh;overflow:auto;margin:8px 0 0;'
+      + 'background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;user-select:text',
+    text: 'Pick a service to read its log.',
+  });
+  const show = async (svc) => {
+    logBox.textContent = `Reading ${svc}…`;
+    const l = await window.api.beams.serviceLogs({ ...opts, service: svc });
+    logBox.textContent = l.output || '(no output yet)';
+  };
+  await modal({
+    title: `Services in ${beam.id}`,
+    subtitle: 'beam-init, from the Phase\u2019s services',
+    width: 'min(760px, 94vw)',
+    render: (body) => body.append(
+      r.services.length
+        ? el('div', { style: 'display:flex;flex-direction:column;gap:4px' }, ...r.services.map((s) => el('div', {
+          class: 'sb-item', style: 'display:flex;gap:8px;cursor:pointer',
+          onClick: () => show(s.name),
+        }, el('span', { class: 'name', style: 'flex:1', text: s.name }), el('span', { class: 'tag', text: String(s.status || '') }))))
+        : el('div', { class: 'hint', text: 'No services — its Phase declares none.' }),
+      logBox),
+    buttons: [{ label: 'Close', value: null }],
+  });
+  return true;
 }
 
 /** `tsh phase edit`: change a Phase in place, in a build console. */
@@ -610,11 +769,31 @@ export async function phaseMenu(x, y, profile, phase, groupKey) {
       title: 'tsh phase add --from: a new Phase with this one as its base image',
       onClick: () => newPhase(profile, { mode: 'from', source: phase.name }),
     },
-    {
+    // Copy and rebuild Phases are not edited in a console: their commands
+    // or files are replaced, and they rebuild.
+    phase.strategy === 'rebuild' || phase.strategy === 'copy' ? {
+      label: phase.strategy === 'copy' ? 'Copy its files again\u2026' : 'Replace its command file\u2026', icon: '\u270E',
+      title: phase.strategy === 'copy' ? 'tsh phase edit --copy: the files copied in again, from its parent' : 'tsh phase edit --commands-file: new commands, rebuilt',
+      onClick: () => replacePhaseInputs(profile, phase),
+    } : {
       label: 'Edit in a build console\u2026', icon: '\u270E',
       title: 'tsh phase edit: change it in place (only while nothing is built from it)',
       onClick: () => editPhase(profile, phase),
     },
+    {
+      label: 'Add setups on top of it\u2026', icon: '\u2795',
+      disabled: phase.state !== 'ready',
+      title: 'Tools, services and files as new stages built on this Phase (tsh phase apply)',
+      onClick: async () => (await import('./phasebuilder.js')).openPhaseBuilder(profile, { from: phase.name }),
+    },
+    // A build still running: its Beam, and saving it from here.
+    ...(phase.buildBeam ? [
+      { sep: true },
+      { label: 'Its build is running', heading: true },
+      { label: 'Open its build Beam', icon: '\u25B6', onClick: () => openBeam({ id: phase.buildBeam, proxy: profile.proxy, home: profile.homeDir || null }) },
+      { label: 'Save a snapshot now', icon: '\u2193', title: 'tsh phase snapshot in its build Beam — the build keeps going', onClick: () => snapshotBuild(profile, phase) },
+      { label: 'Save and finish the build\u2026', icon: '\u2713', title: 'tsh phase snapshot --final', onClick: () => snapshotBuild(profile, phase, { final: true }) },
+    ] : []),
     { sep: true },
     { label: 'Copy name', icon: '\u29C9', onClick: () => { window.api.clipboard.write(phase.name); status(`Copied ${phase.name}`); } },
     phase.digest ? {
@@ -753,25 +932,19 @@ export async function addBeam(profile, { phase: preselect = '' } = {}) {
           : 'No Phases yet — the beam starts from the standard image. `tsh phase add` makes one.';
         return;
       }
-      const when = (ms) => (ms ? new Date(ms).toLocaleDateString() : '');
-      phaseSel = select([
-        { value: '', label: 'The standard image' },
-        {
-          group: 'Phases',
-          options: ready.map((p) => ({
-            value: p.name,
-            label: [p.name, p.parent ? `from ${p.parent}` : '', when(p.publishedAt), p.region].filter(Boolean).join(' · '),
-          })),
-        },
-      ], ready.some((p) => p.name === preselect) ? preselect : '');
       // A Phase lives in a region; starting there avoids asking for one it is not in.
       const matchRegion = () => {
-        const p = ready.find((x) => x.name === phaseSel.value);
+        const p = ready.find((x) => x.name === phaseSel?.value);
         if (p?.region && REGIONS.some((o) => o.value === p.region)) regionSel.value = p.region;
       };
-      phaseSel.addEventListener('change', matchRegion);
+      // Your Phase folders and a search, not one long list (phasepicker.js).
+      phaseSel = phasePicker({
+        profile, phases: ready, standard: 'The standard image',
+        value: ready.some((p) => p.name === preselect) ? preselect : '',
+        onChange: matchRegion,
+      });
       matchRegion();
-      phaseWrap.replaceChildren(field('Start from', phaseSel,
+      phaseWrap.replaceChildren(field('Start from', phaseSel.el,
         'A Phase is a saved image: the beam starts with what was installed in it. '
           + (waiting ? `${waiting} more not ready yet. ` : '') + 'Latest snapshot of the one you pick.'));
     }).catch((e) => { phaseNote.textContent = e.message; });
@@ -781,12 +954,36 @@ export async function addBeam(profile, { phase: preselect = '' } = {}) {
     title: 'Start a beam',
     subtitle: profile.cluster || profile.proxy,
     width: 'min(520px, 94vw)',
-    render: (body) => {
+    render: (body, { close }) => {
+      /*
+       * A beam started here runs an image; it is not a build. `tsh phase
+       * snapshot` only saves from a Phase's own build Beam (phase add or
+       * phase edit), so work done in this one cannot be kept as a Phase —
+       * said before it is started, with the way that can.
+       */
+      const saveNote = canPhase ? el('div', { class: 'hint beam-save-note', style: 'margin-top:8px;color:var(--amber)' },
+        el('span', { style: 'margin-right:5px', text: '\u26A0' }),
+        'Work in this beam can\u2019t be saved as a Phase. To keep it, ',
+        el('button', {
+          class: 'linklike', type: 'button', text: 'start a Phase build instead',
+          style: 'background:none;border:0;padding:0;color:var(--accent);cursor:pointer;font:inherit;text-decoration:underline',
+          title: 'tsh phase add: a build beam you can save with tsh phase snapshot',
+          onClick: () => close({ switchToPhase: true, from: phaseSel?.value || '' }),
+        }),
+        can.apply ? ', or ' : '',
+        can.apply ? el('button', {
+          class: 'linklike', type: 'button', text: 'build one from setups',
+          style: 'background:none;border:0;padding:0;color:var(--accent);cursor:pointer;font:inherit;text-decoration:underline',
+          title: 'Tools, services and files picked as setups, built with tsh phase apply',
+          onClick: () => close({ switchToBuilder: true, from: phaseSel?.value || '' }),
+        }) : null,
+        '.') : null;
       body.append(
         ...(canPhase ? [phaseWrap] : []),
         ...(rolesField ? [rolesField] : []),
         field('Region', regionSel,
           'The cluster may put it somewhere else if the region you ask for is unavailable.'),
+        saveNote,
         note);
     },
     buttons: [
@@ -813,6 +1010,14 @@ export async function addBeam(profile, { phase: preselect = '' } = {}) {
     ],
   });
   if (!res) return null;
+  if (res.switchToBuilder) {
+    await (await import('./phasebuilder.js')).openPhaseBuilder(profile, { from: res.from || '' });
+    return null;
+  }
+  if (res.switchToPhase) {
+    await newPhase(profile, res.from ? { mode: 'from', source: res.from } : {});
+    return null;
+  }
 
   status(`Beam ${res.id} started in ${res.region}`, 8000);
   await refreshBeams();
@@ -1160,6 +1365,11 @@ export function beamMenu(x, y, beam) {
       onClick: () => openBeam(beam, { filesOnly: true }),
     },
     { label: 'Run a command…', onClick: () => execInBeam(beam) },
+    {
+      label: 'Services…',
+      title: 'What its Phase starts in it (beamctl list), and each one\u2019s log',
+      onClick: () => showBeamServices(beam),
+    },
     {
       label: 'Active sessions in this beam…',
       title: 'Watch, join or moderate a session that is going on in it now — an agent at work, say',

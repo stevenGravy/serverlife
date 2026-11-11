@@ -159,13 +159,21 @@ async function addSupport({ home, proxy } = {}) {
   // A tsh that cannot be run at all — missing, or too old to know `beams` —
   // answers "no" to everything rather than failing the dialog that asked.
   const ask = (args) => run([...base({ proxy }), ...args], { home, timeout: 60000 }).catch(() => ({ ok: false, stdout: '', stderr: '' }));
-  const [addHelp, phaseHelp] = await Promise.all([ask(['beams', 'add', '--help']), ask(['phase', '--help'])]);
+  const [addHelp, phaseHelp, phaseAddHelp] = await Promise.all([
+    ask(['beams', 'add', '--help']), ask(['phase', '--help']), ask(['phase', 'add', '--help'])]);
   const help = plain((addHelp.stdout || '') + (addHelp.stderr || ''));
+  const phaseText = plain((phaseHelp.stdout || '') + (phaseHelp.stderr || ''));
+  const phaseAddText = plain((phaseAddHelp.stdout || '') + (phaseAddHelp.stderr || ''));
   const answer = {
     // `--help` exits non-zero on some builds, so read the text rather than the code.
     phases: /--phase[=\s]/.test(help) && /\bls\b/.test(plain((phaseHelp.stdout || '') + (phaseHelp.stderr || '')))
       && !/expected command but got "phase"/.test(plain(phaseHelp.stderr || '')),
     roles: /--roles[=\s]/.test(help),
+    // Newer than `tsh phase` itself: a multi-stage phase.yaml, copied files,
+    // and starting a build without opening its console.
+    apply: /\bphase apply\b/.test(phaseText),
+    copy: /--copy[=\s]/.test(phaseAddText),
+    noConsole: /--\[no-\]console|--no-console/.test(phaseAddText),
   };
   addSupportCache.set(key, answer);
   return answer;
@@ -200,6 +208,8 @@ async function phases({ proxy, home } = {}) {
             nextBuild: p.next_build ? Date.parse(p.next_build) || null : null,
             // Why a build failed, and how to look inside what it left.
             lastError: p.last_error || '',
+            // The build Beam of a build still running: where to save it from.
+            buildBeam: p.build_beam || '',
           })).filter((p) => p.name),
         };
       }
@@ -248,27 +258,136 @@ async function failedPhases({ proxy, home } = {}) {
  * are different requests to tsh, so never both); `roles` limits what the
  * builds may act as, and is otherwise inherited.
  */
-function phaseAddArgs({ proxy, name, from, forkFrom, commandsFile, roles, region } = {}) {
+function phaseAddArgs({ proxy, name, from, forkFrom, commandsFile, copies, noConsole, roles, region } = {}) {
   if (from && forkFrom) throw new Error('Build on a Phase or fork one — not both');
   // A fork starts from saved files; a command file is a recipe run on a base.
   if (forkFrom && commandsFile) throw new Error('A fork starts from saved files — it takes no command file');
+  const copyArgs = copyFlags(copies);
+  if (copyArgs.length && (commandsFile || forkFrom)) throw new Error('Copied files make a Phase of their own — not with a command file or a fork');
   const args = [...base({ proxy }), 'phase', 'add'];
   if (name) args.push(String(name));
   if (from) args.push('--from=' + from);
   if (forkFrom) args.push('--fork-from=' + forkFrom);
   // Instead of an interactive console: the build runs the file and streams its log.
   if (commandsFile) args.push('--commands-file=' + commandsFile);
+  args.push(...copyArgs);
+  if (noConsole) args.push('--no-console');
   if (Array.isArray(roles) && roles.length) args.push('--roles=' + roles.join(','));
   if (region) args.push('--region=' + region);
   return args;
 }
 
-function phaseEditArgs({ proxy, name, from, region } = {}) {
+/**
+ * `--copy=<destination>:<local source>`, once per file: tsh writes the
+ * destination first, which reads backwards next to everything else, so the
+ * callers pass { from, to } and this spells it.
+ */
+function copyFlags(copies) {
+  if (!Array.isArray(copies)) return [];
+  return copies.filter((c) => c && (c.from || c.to)).map((c) => {
+    const to = String(c.to || '').trim();
+    const from = String(c.from || '').trim();
+    if (!to.startsWith('/')) throw new Error(`Where in the Beam should ${from || 'it'} go? An absolute path, outside /home`);
+    if (to === '/home' || to.startsWith('/home/')) throw new Error(`${to}: copied files go outside /home`);
+    if (!from) throw new Error(`Which local file goes to ${to}?`);
+    return `--copy=${to}:${from}`;
+  });
+}
+
+/**
+ * `tsh phase edit`: a build console on its saved files, or — for a Phase
+ * built from commands or copied files — those replaced: a new command file,
+ * or the files copied again.
+ */
+function phaseEditArgs({ proxy, name, from, commandsFile, copies, noConsole, region } = {}) {
   if (!name) throw new Error('Which Phase?');
+  const copyArgs = copyFlags(copies);
+  if (commandsFile && copyArgs.length) throw new Error('A command file or copied files — not both');
+  if (from && (commandsFile || copyArgs.length)) throw new Error('Editing from another Phase takes no command file or copies');
   const args = [...base({ proxy }), 'phase', 'edit', String(name)];
   if (from) args.push('--from=' + from);
+  if (commandsFile) args.push('--commands-file=' + commandsFile);
+  args.push(...copyArgs);
+  if (noConsole) args.push('--no-console');
   if (region) args.push('--region=' + region);
   return args;
+}
+
+/**
+ * `tsh phase apply -f`: every stage of a phase.yaml, in order. It opens no
+ * console — it streams each stage's log and returns when the last is saved
+ * (or one fails) — so it still runs in a terminal tab, for the log.
+ */
+function phaseApplyArgs({ proxy, file, noConsole, region } = {}) {
+  if (!file) throw new Error('Which phase.yaml?');
+  const args = [...base({ proxy }), 'phase', 'apply', '--file=' + file];
+  if (noConsole) args.push('--no-console');
+  if (region) args.push('--region=' + region);
+  return args;
+}
+
+/**
+ * Save a running build: `tsh phase snapshot` inside its build Beam, run there
+ * through `beams exec` — the snapshot is taken by the builder in that Beam,
+ * so it has to be asked from inside. `final` ends the build once saved;
+ * `force` leaves out changes outside /home instead of refusing them.
+ */
+async function phaseSnapshot({ beam, proxy, home, final = false, force = false } = {}) {
+  if (!beam) throw new Error('Which build Beam?');
+  const cmd = ['tsh', 'phase', 'snapshot', force ? '--force' : '', final ? '--final' : ''].filter(Boolean).join(' ');
+  let r;
+  try {
+    r = await run(argsFor('exec', [beam, '--', cmd], { proxy }), { home, timeout: 15 * 60000 });
+  } catch (e) {
+    return { ok: false, output: e.message || 'tsh beams exec could not be run' };
+  }
+  const output = plain((r.stdout || '') + '\n' + (r.stderr || '')).trim();
+  // --final ends the Beam it ran in, which can cut the exec off before it
+  // reports: the Phase list says whether it was saved, not this exit code.
+  return { ok: !!r.ok, output };
+}
+
+/**
+ * The services beam-init runs in a Beam — what a Phase's services: became —
+ * from `beamctl --json list` inside it.
+ */
+async function beamServices({ name, proxy, home } = {}) {
+  if (!name) throw new Error('Which beam?');
+  const r = await run(argsFor('exec', [name, '--', 'beamctl --json list'], { proxy }), { home, timeout: 60000 }).catch((e) => ({ ok: false, stdout: '', stderr: e.message }));
+  const out = plain(r.stdout || '');
+  const at = out.search(/[[{]/);
+  if (r.ok && at >= 0) {
+    try {
+      const data = JSON.parse(out.slice(at));
+      return { ok: true, services: servicesFrom(data) };
+    } catch { /* falls through */ }
+  }
+  return { ok: false, error: plain(r.stderr || '') || out || 'beamctl list said nothing', services: [] };
+}
+
+/**
+ * `beamctl --json list` is a map of name to its one state —
+ * { "web": { "running": { "main_pid": 165 } }, "init": { "exited": { "code": 0 } } }
+ * — said here as a name and a few words.
+ */
+function servicesFrom(data) {
+  if (Array.isArray(data)) return data.map((s) => ({ name: s.name || '', status: s.status || s.state || '' }));
+  return Object.entries(data || {}).map(([name, st]) => {
+    const [state, detail] = Object.entries(st || {})[0] || ['unknown', {}];
+    let status = state;
+    if (state === 'running' && detail?.main_pid) status = `running (pid ${detail.main_pid})`;
+    else if (state === 'exited' && detail && 'code' in detail) status = detail.code === 0 ? 'finished' : `exited with ${detail.code}`;
+    else if (detail?.reason) status = `${state}: ${detail.reason}`;
+    return { name, status, state };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** One service's log so far: `beamctl logs <service>` inside the Beam. */
+async function beamServiceLogs({ name, service, proxy, home } = {}) {
+  if (!name || !service) throw new Error('Which beam and service?');
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(service)) throw new Error('Not a service name');
+  const r = await run(argsFor('exec', [name, '--', `beamctl logs ${service}`], { proxy }), { home, timeout: 60000 }).catch((e) => ({ ok: false, stdout: '', stderr: e.message }));
+  return { ok: !!r.ok, output: plain((r.stdout || '') + (r.ok ? '' : '\n' + (r.stderr || ''))).trim() };
 }
 
 /**
@@ -405,5 +524,6 @@ function execArgs({ name, proxy, jumphost } = {}, command = null) {
 
 module.exports = {
   supported, list, add, remove, stillListed, exec, publish, unpublish, scp, addSupport, phases, removePhase, phaseAddArgs, phaseEditArgs, failedPhases,
+  phaseApplyArgs, phaseSnapshot, beamServices, beamServiceLogs, copyFlags, servicesFrom,
   sshArgs, execArgs, toBeam,
 };

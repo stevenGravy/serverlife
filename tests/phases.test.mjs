@@ -47,12 +47,24 @@ function fakeTsh(answers) {
 
 test('a tsh without them (18.11.7) is offered neither Phases nor roles', async () => {
   fakeTsh(WITHOUT);
-  assert.deepEqual(await beams.addSupport({}), { phases: false, roles: false });
+  const r = await beams.addSupport({});
+  assert.deepEqual({ phases: r.phases, roles: r.roles, apply: r.apply }, { phases: false, roles: false, apply: false });
 });
 
 test('a tsh with them (18.11.9) is offered both', async () => {
   fakeTsh(WITH);
-  assert.deepEqual(await beams.addSupport({}), { phases: true, roles: true });
+  const r = await beams.addSupport({});
+  assert.deepEqual({ phases: r.phases, roles: r.roles }, { phases: true, roles: true });
+});
+
+test('apply, --copy and --no-console are read from tsh phase --help and tsh phase add --help', async () => {
+  fakeTsh({
+    ...WITH,
+    'phase --help': WITH['phase --help'] + '\n  phase apply     Create or update Phases from a multi-document YAML configuration.\n',
+    'phase add --help': '      --[no-]console  Open an interactive shell or stream command logs.\n      --copy=COPY ...  Copy files outside /home\n',
+  });
+  const r = await beams.addSupport({});
+  assert.deepEqual({ apply: r.apply, copy: r.copy, noConsole: r.noConsole }, { apply: true, copy: true, noConsole: true });
 });
 
 test('Phases need both: --phase on beams add without tsh phase is not enough', async () => {
@@ -66,7 +78,7 @@ test('the answer is kept per tsh binary, so it is asked once', async () => {
   const calls = fakeTsh(WITH);
   await beams.addSupport({});
   await beams.addSupport({});
-  assert.equal(calls.length, 2, 'two help calls, the first time only');
+  assert.equal(calls.length, 3, 'three help calls, the first time only');
 });
 
 test('tsh phase ls is read into the fields the picker shows', async () => {
@@ -82,7 +94,7 @@ test('tsh phase ls is read into the fields the picker shows', async () => {
   assert.deepEqual(r.phases[0], {
     name: 'sage-garden', state: 'ready', parent: 'default:v1', region: 'us-west-2',
     digest: 'sha256:34eada19f8', owner: 'stevenGravy@users.noreply.github.com', strategy: 'snapshot', roles: [],
-    publishedAt: Date.parse('2026-11-05T21:29:20.21254155Z'), nextBuild: null, lastError: '',
+    publishedAt: Date.parse('2026-11-05T21:29:20.21254155Z'), nextBuild: null, lastError: '', buildBeam: '',
   });
 });
 
@@ -102,7 +114,8 @@ test('a beam started from a Phase with roles passes both, and a plain one neithe
 test('a tsh that cannot be run at all is offered nothing, without throwing', async () => {
   teleport.findTsh = () => `/opt/tsh-missing-${++tshPath}`;
   teleport.run = async () => { throw new Error('spawn tsh ENOENT'); };
-  assert.deepEqual(await beams.addSupport({}), { phases: false, roles: false });
+  const can = await beams.addSupport({});
+  assert.deepEqual({ phases: can.phases, roles: can.roles, apply: can.apply }, { phases: false, roles: false, apply: false });
   const r = await beams.phases({});
   assert.equal(r.ok, false);
   assert.deepEqual(r.phases, []);

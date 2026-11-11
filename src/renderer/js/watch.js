@@ -153,6 +153,8 @@ function snapshot(host, groupKey) {
     key: hostKey(host),
     group: groupKey,
     type: host.type || 'teleport',
+    // A Kubernetes cluster's watch must come back as one, ☸ and all, when it is drawn from this record.
+    kind: host.kind || null,
     uuid: host.uuid || null,
     name: host.name || host.alias || '',
     hostname: host.hostname || '',
@@ -489,6 +491,8 @@ function ghostFrom(w) {
   return {
     id: `missing:${w.key}`,
     type: w.type,
+    // Records from before the kind was kept: a kube cluster's key says what it is.
+    kind: w.kind || (String(w.key || '').startsWith('kube:') ? 'kube' : undefined),
     missing: true,
     watchKey: w.key,
     group: w.group,

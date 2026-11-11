@@ -11,6 +11,82 @@ tagged `v<version>`.
 
 ---
 
+## [0.34.0] — 2026-11-11
+
+Phases put together from setups — languages, cloud CLIs, Postgres and Redis,
+a repository to clone, your dotfiles, your own add-ins — into a checked,
+colour-coded phase.yaml you can also write by hand, and built with `tsh phase
+apply`. Live stats for this computer under a local shell, Redraw for muddled
+terminals, and Settings in sections with a search.
+
+### Added
+
+- **Phases from setups** — *+ From setups…* on the Phases tab, and *Add
+  setups on top of it…* on a Phase: pick ready-made setups — Go, Rust, Java,
+  uv, Bun, kubectl and Helm, Terraform, the AWS and Google Cloud CLIs, a
+  PostgreSQL or Redis server, a repository cloned on first start, your
+  dotfiles, environment variables, your own commands and services — into
+  stages, see the `phase.yaml` they make checked as you go, and build it with
+  `tsh phase apply`. *Build it, then work in it…* opens an interactive build
+  on top once it is done. Setups can be kept to start from again.
+- **Open an existing phase.yaml in the builder** and carry on — its stages
+  come back as they were written, to change and build again.
+- **Edit a phase.yaml by hand in the builder** — *Edit by hand*: the text is
+  what is built and saved, comments and all, checked as you type, with the
+  stages following it.
+- **The Azure CLI** as a Phase setup.
+- **Settings in sections, with a dropdown and a search** — and the title bar's
+  search opens Settings filtered to the setting it found.
+- **New Phase points to the setup builder**, and Start a beam's note links to
+  it too.
+- **Your own Phase add-ins** — *My add-ins…* in the builder: setups written as
+  a YAML file each (a label, fields, and the commands, services or files they
+  add, with `{{field}}` filled in), listed with the built-in ones and checked
+  the same way, in a folder you can share.
+- **Copy files into a new Phase** (`--copy`) and **start a build without its
+  console** (`--no-console`) in *New Phase…*, where tsh has them.
+- **Replace a Phase's command file or copied files** from its menu, for
+  Phases built that way.
+- **Save a running build from its Phase's menu** — *Save a snapshot now* and
+  *Save and finish the build…*, with *Open its build Beam*; a snapshot refused
+  for changes outside `/home` offers to save without them.
+- **Services…** on a beam: what its Phase starts in it, and each one's log.
+- **Live stats under a local shell** on macOS and Linux — this computer's CPU,
+  memory, swap, load, disk and network, under every plain local shell; hidden
+  from a pane's menu (and kept hidden) or from Settings.
+- **One live stats bar per machine in a tab** — a setting, off by default, so
+  split panes on one host share a bar.
+- **Redraw** on a pane's menu, for muddled text — Claude Code in a narrow pane,
+  most often; terminals also repaint after the computer wakes.
+- **A server icon on SSH host rows** beside the ☸ on Kubernetes clusters, in
+  the sidebar and the Hosts pane; *Settings → Server icon on SSH hosts* turns
+  it off.
+- **Add a tsh home in a dialog** — type the directory or browse for it; it may
+  be an environment variable (`$TELEPORT_HOME`, `${WORK}/.tsh`), and the home
+  can carry its own tsh variables.
+- **Choose a Phase from your folders, or search for it** — in Start a beam,
+  New Phase and the setup builder.
+
+### Changed
+
+- **Start a beam says the beam can't be saved as a Phase**, with a link to
+  start a Phase build instead — snapshots are only taken from a Phase's build beam.
+
+### Fixed
+
+- **The phase builder no longer greets a new, empty stage with an error**, and
+  no longer shows a stray "null" under its problems.
+- **Escape in a code editor inside a dialog** stays in the editor instead of
+  closing the dialog and losing what was typed.
+- **A watched Kubernetes cluster that has gone missing** is drawn as a gone
+  row with its ☸ — it had no icon, and under an expired cluster it showed as
+  bare text.
+- **YAML and config editors are colour-coded for the app's theme** — the ssh
+  config, kubeconfig and Kubernetes YAML editors, and the new phase.yaml view,
+  were drawn in CodeMirror's light default colours on dark panels.
+
+---
+
 ## [0.33.0] — 2026-11-10
 
 A Kubernetes role scoped to one namespace can now get to it by typing its

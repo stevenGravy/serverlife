@@ -1569,6 +1569,18 @@ it:
   *Settings → Open the requestable-resource monitor when the app starts*
   turns that on if you would rather have it up.
 
+### Teleport homes
+
+*Settings → Teleport homes → Add a directory…* opens a small dialog: type the
+directory or press *Browse…*. The path may use an **environment variable** —
+`$TELEPORT_HOME`, `${WORK}/.tsh` — read each time the app starts and when
+Settings are saved, and the dialog says where it points now and how many
+profiles are there; one naming a variable ServerLife can't see is skipped
+until it can. The same dialog takes **variables for that home** — `NAME=value`
+lines such as `TELEPORT_TOOLS_VERSION=18.11.10` — set for every tsh command run
+with it, over the ones for every cluster and under a cluster's own. Each home's
+row has a *vars* button to change either.
+
 ### Which tsh
 
 *Settings → Teleport homes → Locate tsh / ssh…* sets **Path to tsh** — another
@@ -1865,7 +1877,10 @@ marks that mean nothing for a cluster. Double-click opens it, logs into
 it, or starts a request, whichever it currently is; the bulk "Request
 access to N selected nodes…" action only ever counts the SSH ones in a
 mixed selection — a kube cluster's own request goes through its
-single-row menu instead.
+single-row menu instead. SSH and Teleport hosts carry a small **server
+icon** in the same place, so the two kinds read apart at a glance — *Settings →
+Server icon on SSH hosts* turns it off. A watched cluster that has gone keeps its
+☸ on its gone row.
 
 **And a Refresh button**, beside the cluster picker, re-reads just what that
 pane is showing — a leaf cluster's nodes, or the same re-read the sidebar's
@@ -1994,9 +2009,19 @@ cluster, see [Which tsh](#which-tsh).)
   the error and how to look inside it. *failed* is `tsh phase ls-failed`: the
   snapshots failed builds left behind. ⟳ reads either again.
 - **Start a beam…** gains **Start from** — the standard image or any ready
-  Phase (the region follows the Phase's) — and **Delegate roles**, your roles
-  on that cluster with a tick each; none ticked leaves `--roles` off.
-- **+ New Phase…** builds one, from the default base image, **on top of a
+  Phase, picked from your Phase folders (opened and closed as on the Phases
+  tab) or found with the search box above them; the region follows the
+  Phase's. New Phase's *Phase* and the setup builder's *Builds on* choose the
+  same way — and **Delegate roles**, your roles
+  on that cluster with a tick each; none ticked leaves `--roles` off. A beam
+  started there **can't be saved as a Phase** — `tsh phase snapshot` saves only
+  from a Phase's own build beam — so the dialog says so in a line, with a
+  *start a Phase build instead* link that opens New Phase (on top of the Phase
+  you picked, if any) — or a *build one from setups* link, which opens the
+  builder on it. Use a Phase build whenever you plan to keep what you do.
+- **+ New Phase…** offers *Build it from setups instead…* at the top, where tsh
+  has `phase apply`, for anyone about to install tools by hand in a console. It
+  builds one, from the default base image, **on top of a
   Phase** (`--from`, also any upstream image like `default:v1`, or an exact
   `name@sha256:…` snapshot) or **forked from one** (`--fork-from`). It is built
   **in an interactive build console** — a shell on a build beam, in a new tab;
@@ -2004,10 +2029,104 @@ cluster, see [Which tsh](#which-tsh).)
   a command file** (`--commands-file`), whose log streams in the tab. A command
   file lists commands as `command:` and `args:` (`shell:` is only for `tsh phase
   apply`). Roles and a region can be chosen, and the exact command is previewed.
+  Where tsh has them, it can also be built by **copying files from this
+  computer** (`--copy`, a local file or folder to an absolute path outside
+  `/home`), and **started without opening its console** (`--no-console`) to
+  come back to later.
+- **+ From setups…** puts a Phase together from ready-made **setups**, as
+  stages of a `phase.yaml` built with `tsh phase apply` (needs a tsh that has
+  it). Each stage is its own Phase, built on the one before it: either it
+  **installs and runs commands** (as root, run again whenever it refreshes —
+  daily, and when the stage below changes) or it **copies files from this
+  computer**, and either kind can start **services** in every beam made from
+  it. The setups:
+  - *Packages and languages* — Debian packages, compilers and build tools, Go,
+    Rust, Java, uv, pnpm/Yarn/Bun.
+  - *Cloud and infrastructure* — kubectl and Helm, Terraform, the AWS CLI, the
+    Google Cloud CLI, the Azure CLI (from Microsoft's Debian 13 repository once
+    there is one, bookworm's until then).
+  - *Settings* — environment variables for login shells, and rebuilding an
+    app's dependencies under `/home` (`npm ci` by default), which reserves that
+    folder with `rebuild_home_paths`.
+  - *Services* — clone a repository on first start (left alone once it is
+    there), a PostgreSQL server (data in `/home/beams/.pgdata`, so a snapshot
+    keeps your dev database; `psql` connects as `beams` with nothing to set
+    up), a Redis server (in memory, empty in every beam), and *Run my app*.
+  - *Files* — copy a file or folder in, and **My dotfiles and settings**:
+    files from your home folder (`.gitconfig`, `.vimrc`, `~/.claude`…) put in
+    the beam user's home on first start, without replacing ones already there
+    unless you say so.
+  - *Your own* — any command, or any service with its kind (`pre-start` or
+    `background`) and when it runs (`user`, `runtime`, `snapshot`, `rebuild`,
+    `build`, `all`).
+    *Written in YAML* takes `commands:`, `services:`, `files:` and
+    `rebuild_home_paths:` exactly as `phase.yaml` has them, for anything the
+    others don't cover.
+
+  The `phase.yaml` they make is shown beside them, colour-coded, and checked as it changes
+  against the rules tsh applies — names, the order of stages, destinations
+  outside `/home`, service names, the 32 KiB limit — so a mistake is named
+  before anything runs. What is only not filled in yet — an empty stage, a
+  required field left blank — waits until you build or save, rather than
+  greeting a new stage with an error. *Build it* runs `tsh phase apply` in a tab, streaming
+  each stage's log; *Build it, then work in it…* does the same and then opens
+  New Phase on top of the last stage — an interactive build console with
+  everything installed, which you save with `tsh phase snapshot`. *Save
+  phase.yaml…* writes the file instead, and *Keep this setup* saves the
+  stages to start from next time. Applying a name that is already a Phase
+  replaces it, asked first.
+
+  **Edit by hand**, above the `phase.yaml`, makes it an editor: anything `tsh
+  phase apply` takes, checked as you type, and built and saved exactly as
+  written, comments included. The stages on the left follow the text (dimmed
+  while you type), and *Back to setups* carries it on as stages — what the
+  setups do not cover arrives as *Written in YAML*. A copied file's `from:` must
+  be a full path when written by hand: tsh reads a relative one against
+  wherever the file is saved, and does not expand `~`. *Open a phase.yaml…*
+  while editing by hand loads the file's own text, comments and all. Escape in
+  the editor stays in the editor.
+
+  **Open a phase.yaml…** carries on from one already written — saved, made by
+  hand, or one a build left in `phase-setups/` (where the dialog opens): each
+  document becomes a stage with its name, parent and kind, and what it holds
+  comes in as *Written in YAML*, exactly as written, to change or to add other
+  setups beside. Relative file paths are read from the file's own folder, as
+  tsh would. A raw `--commands-file` opens as one stage.
+
+  **Where these are kept**: each build's `phase.yaml` is written to
+  `phase-setups/` in the app's data folder (on macOS `~/Library/Application
+  Support/ServerLife/phase-setups/`), named after its first stage and the time;
+  kept setups are saved with the app's settings. The cluster keeps the built
+  images, each stage's parent, and its commands and services — but tsh doesn't
+  give them back, so a stage can't be read back into the builder from the
+  cluster. Keep the `phase.yaml` (or the setup) if you will want to change and
+  reapply it; copied files exist only in the image once built.
+
+- **My add-ins…** in the builder: setups of your own, one YAML file each, in
+  the same list under their own group and checked the same way. An add-in
+  gives a `label`, optionally a `group`, `help` and `fields` (a `key`, `label`,
+  `default`, `required`, and a `kind` — `text`, `textarea`, `select` with
+  `options`, `path` or `paths`), its `stage` (`commands`, `files`, or `any`
+  for services only), and the `commands`, `services`, `files` and
+  `rebuild_home_paths` it adds, written as in `phase.yaml`. `{{key}}` in any of
+  those is what was typed in that field, and `{{key|sh}}` the same quoted as
+  one shell word. The manager starts a new one from an example, checks it as
+  you type — unknown keys, a `{{field}}` with no such field, the wrong stage —
+  and shows the stage it would add. They live in `phase-addins/` in the app's
+  data folder unless *Use another folder…* points elsewhere: a checked-out repo
+  gives a team the same add-ins.
 - **Right-click a Phase** for *History and beams…*, *Start a beam from it…*,
   *Fork into a new Phase…*, *Build a new Phase on top of it…*, *Edit in a build
-  console…* (`tsh phase edit`), copying its name or exact snapshot, and *Delete
-  Phase…* — asked first; beams already running from it keep running.
+  console…* (`tsh phase edit`), *Add setups on top of it…*, copying its name or
+  exact snapshot, and *Delete Phase…* — asked first; beams already running from
+  it keep running. A Phase built from commands offers *Replace its command
+  file…* instead of a console, and one built from copied files *Copy its files
+  again…* — either rebuilds it. While a Phase's build is running, the menu adds
+  *Open its build Beam*, *Save a snapshot now* and *Save and finish the
+  build…*; a snapshot refused for changes outside `/home` offers to save
+  without them (`--force`).
+- **Services…** on a beam's menu lists what beam-init is running in it — its
+  Phase's services — with each one's state and log (`beamctl`).
 - **History** shows the chain back to the base image — `default:v1 →
   sage-garden ⑂ my-fork`, ⑂ for a fork — what was built or forked from it, the
   beams running it, and the builds started from ServerLife with how each ended.
@@ -2952,6 +3071,11 @@ each kind saying which tool takes it from there.
 
 ## Interface
 
+- **Settings** is in sections — Teleport homes and tsh, Appearance, Text and
+  fonts, File browser, KubeLife, Sessions and the interface and more — with a
+  dropdown at the top to show just one, and a **search** that keeps only the
+  settings whose words match (each with its explanation). Choosing a setting
+  from the title bar's search opens Settings filtered to it.
 - **A guided tour** (*Help → Take the Tour…*, offered once on a first run, and
   again when it gains steps). Twenty steps that spotlight the real interface —
   the search box, the host list, the filter, quick connect, splits, the file
@@ -3027,6 +3151,21 @@ each kind saying which tool takes it from there.
   `/proc`); off on per-session-MFA hosts, which would ask for another
   approval. *Settings → Live stats under each server session*, or *Hide live
   stats* on a pane's menu for that host.
+- **Live stats under a local shell**, on macOS and Linux: the same bar for this
+  computer, read by the app itself (no command runs), under plain shells —
+  not under a login, a Phase build or an assistant the app started in a tab.
+  *Hide live stats* on a local pane's menu turns it off for every local shell,
+  and it stays off; *Show live stats*, or *Settings → …and under local shells*,
+  brings it back.
+- **One live stats bar per machine in a tab** (*Settings*, off by default):
+  split panes on the same host — or several local shells — in one tab share a
+  single bar, on the first of them, and the others keep that row for the
+  terminal. Close that pane and the next one takes the bar.
+- **Redraw** on a pane's menu fixes muddled text — what hiding and showing the
+  file browser used to do. It repaints the terminal and resizes the session by
+  a column and back, so a program that draws its own screen (Claude Code's
+  input box, vim, htop) draws it again; it happens most in a narrow pane where
+  long lines wrap. Terminals also repaint after the computer wakes or unlocks.
 - **No background commands on servers** (*Settings*) stops everything the app
   runs on a host by itself: live stats, following the shell's folder, the file
   browser's free space and its re-listing every few seconds. With it on, a
