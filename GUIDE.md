@@ -2219,6 +2219,44 @@ Categorised into Workloads, Config, Network, Storage, Access Control,
 Cluster and Custom Resources, with a kind filter box once there are a lot of
 them.
 
+- **Which cloud it is on.** A small outlined badge beside the ☸ — **EKS**,
+  **GKE**, **AKS**, or a local cluster (minikube, kind, Docker Desktop, k3s) —
+  on every Kubernetes row, from the cheapest evidence that says so: the
+  kubeconfig (an EKS or AKS endpoint, EKS's ARN and GKE's `gke_…` context
+  names, the `aws eks get-token`, `gke-gcloud-auth-plugin` or `kubelogin`
+  plugin), Teleport's labels (`teleport.dev/cloud`, `cloud`, tags copied in as
+  `aws/…`, `gcp/…`, `azure/…`), and the cluster itself once opened (its nodes'
+  `providerID` and labels, and a `-eks-` or `-gke.` server version), which is
+  remembered for next time. A badge from the name alone (`prod-eks`) is dashed:
+  a guess until the cluster is opened. Hover it for the region, account,
+  project or resource group, and where it was found. **Connecting asks the
+  cluster**: expanding a cluster, opening its browser or logging in to it runs
+  one `kubectl version` (and reads the nodes only if that is not enough), once
+  a run — so a cluster reached only through Teleport, with no labels, gets its
+  badge the first time it is used, and keeps it. Nothing is asked on a timer,
+  so a per-session-MFA cluster is only asked when you are using it anyway.
+- **Set the cloud by hand**: right-click a Kubernetes row → *Cloud* → Amazon
+  EKS, Google GKE, Azure AKS or a local one. What you set wins over detection
+  (the badge says *set by you*); *Details — region, account…* adds what the
+  console link needs (EKS region and account, GKE project and location, AKS
+  subscription and resource group); *Detect automatically* forgets it. The
+  Cloud view offers *Mark it as* EKS, GKE or AKS when nothing identified it.
+- **☁ Cloud**, in the browser's list beside Helm and 3D, shows what people go
+  to their cloud's console for but can read from the Kubernetes API —
+  read-only:
+  - **Node groups and pools**: EKS managed node groups, Karpenter, Auto Mode
+    and Fargate; GKE node pools (Spot, preemptible, Autopilot); AKS agent pools
+    with system/user mode and Spot — each with ready nodes, machine types,
+    capacity type, zones and kubelet version. Click one for its nodes.
+  - **Workload identity**: service accounts mapped to a cloud identity — IRSA
+    role ARNs on EKS, Google service accounts on GKE, Azure client IDs on AKS.
+  - **IAM → Kubernetes** on EKS: the `kube-system/aws-auth` mappings of IAM
+    roles and users to Kubernetes users and groups, or a note that the cluster
+    uses access entries (which live in the AWS API) when there is none.
+  - **Open in the console**: the cluster's page in the AWS, Google Cloud or
+    Azure console, when its region, project or resource group is known.
+  A list your role may not read is said as such — through Teleport an empty
+  node list is often a role that cannot see nodes, not an empty cluster.
 - **Overview** is the landing page: node/namespace counts, pods by phase (each
   clickable to the list behind it), and `kubectl top`'s own numbers for nodes
   and the busiest pods — not just a blank "pick something on the left."

@@ -7,6 +7,7 @@ import { requestableHosts } from './requestable.js';
 import { groupKeyFor } from './folders.js';
 import { isWatched, toggleWatch } from './watch.js';
 import { askNamespace, extraNamespaces } from './kubenamespaces.js';
+import { providerFor, providerBadge, cloudMenuItem, detectOnConnect } from './kubecloud.js';
 
 // Dynamic, not static: sidebar.js already imports this module, and a static
 // import back would close the cycle — the same workaround sessions.js and
@@ -314,6 +315,26 @@ export function kubeIcon() {
   return el('span', { class: 'kube-ico', title: 'Kubernetes cluster', text: '☸' });
 }
 
+/** The Teleport cluster entry (tsh kube ls) a row stands for, if any — where its labels and their provider are. */
+function teleportEntryFor(x) {
+  const proxy = bareProxy(x?.teleportProxy || x?.proxy || x?.profile?.proxy || '');
+  if (!proxy) return null;
+  const wanted = x.kubeClusterName || x.name;
+  for (const entry of availableCache.values()) {
+    const found = (entry?.clusters || []).find((cl) => cl.name === wanted && bareProxy(cl.proxy) === proxy);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** The ☸ and, when known, which cloud: EKS, GKE, AKS or a local one (kubecloud.js). */
+export function kubeMarks(x) {
+  return [kubeIcon(), providerBadge(providerFor(x, teleportEntryFor(x)))];
+}
+
+/** The best provider answer for a context or cluster, for the browser to start from. */
+export function kubeProviderOf(x) { return providerFor(x, teleportEntryFor(x)); }
+
 /*
  * Requestable kube clusters — not even "available" (tsh kube ls would not
  * list them at all), the same third state SSH nodes already have: no
@@ -439,7 +460,7 @@ export function availableClusterRow(p, cluster, opts = {}) {
     el('span', { class: 'st', style: 'background:var(--muted)' }),
     opts.watched ? el('span', { class: 'hwatch', text: '\u{1F514}', title: 'Watched — you will be told if this cluster leaves the inventory' }) : null,
     el('span', { class: 'name', text: cluster.name }),
-    kubeIcon(),
+    ...kubeMarks(cluster),
     labelTag(cluster.labels),
     el('span', { class: 'tag', text: busy ? 'logging in…' : 'not connected' }));
 }
@@ -484,7 +505,7 @@ export function openKubeHostMenu(e, host, groupKey) {
     return contextMenu(e.clientX, e.clientY, [{
       label: 'Log in (tsh kube login)',
       onClick: () => connectAvailableCluster(host.profile, host.availableCluster),
-    }]);
+    }, { sep: true }, cloudMenuItem(host.availableCluster)]);
   }
   return null;
 }
@@ -621,7 +642,11 @@ function ensurePodsLoaded(c, ns) {
 
 function toggleExpanded(c) {
   if (expanded.has(c.id)) expanded.delete(c.id);
-  else { expanded.add(c.id); ensureNamespacesLoaded(c); }
+  else {
+    expanded.add(c.id); ensureNamespacesLoaded(c);
+    // Connecting is when to ask which cloud it is — once, and only then.
+    detectOnConnect(c, kubeSpecOf(c)).catch(() => {});
+  }
   state.emit('kubeContexts');
 }
 
@@ -657,7 +682,7 @@ export function kubeContextRow(c, opts = {}) {
     el('span', { class: 'st', style: 'background:var(--accent)' }),
     opts.watched ? el('span', { class: 'hwatch', text: '\u{1F514}', title: 'Watched — you will be told if this cluster leaves the inventory' }) : null,
     el('span', { class: 'name', text: c.kubeClusterName || c.name }),
-    kubeIcon(),
+    ...kubeMarks(c),
     c.current ? el('span', { class: 'tag', text: 'current' }) : null,
     // Visible even collapsed — "is anything of mine still forwarding here"
     // should not require expanding the cluster to find out.
@@ -670,7 +695,7 @@ export function kubeContextRow(c, opts = {}) {
     el('button', {
       class: 'ghost-btn sm', text: '⤢',
       title: 'Open the full cluster browser — every resource kind, including custom ones',
-      onClick: (e) => { e.stopPropagation(); openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { contextNamespace: c.namespace || undefined }); },
+      onClick: (e) => { e.stopPropagation(); openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { contextNamespace: c.namespace || undefined, provider: kubeProviderOf(c) }); },
     }))];
   if (isOpen) {
     if (mine.length) rows.push(...activeForwardRows(mine));
@@ -1543,6 +1568,8 @@ async function openKubeContextMenu(e, c, groupKey) {
       onClick: () => toggleWatch(watchHost, groupKey || 'kube-local').then(() => state.emit('kubeContexts')),
     });
   }
+  // Which cloud — set by hand when nothing detected it.
+  items.push({ sep: true }, cloudMenuItem(c));
   // Only reachable from the integrated tree (see kubeHostsForProfile) —
   // "Local kubeconfigs" has no SSH-folder group to share, so there is
   // nothing to file into there.

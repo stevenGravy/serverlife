@@ -4223,3 +4223,14 @@ input.needed, textarea.needed {
   font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
   color: var(--muted); margin-bottom: 8px;
 }
+
+/* Which cloud a Kubernetes cluster is on (kubecloud.js): its short name, outlined in the provider's colour — quiet beside the ☸. */
+.kprov {
+  display: inline-flex; align-items: center; flex: none;
+  font-size: 9px; font-weight: 600; letter-spacing: .03em; line-height: 1;
+  padding: 1px 3px; margin-left: 4px; border-radius: 3px;
+  color: var(--kprov); background: transparent; border: 1px solid var(--kprov);
+  opacity: .8;
+}
+/* Guessed from the name: dashed, so it does not read as known. */
+.kprov.guess { border-style: dashed; opacity: .6; }

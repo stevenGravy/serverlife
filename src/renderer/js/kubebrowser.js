@@ -10,6 +10,7 @@ import { buildValuesYaml } from './yamlform.js';
 import { detectStalledRollouts } from './alerts.js';
 import { toCsv } from './csv.js';
 import { askNamespace, extraNamespaces } from './kubenamespaces.js';
+import { providerKey, providerFor, rememberProvider, providerBadge, cloudPanel, setProviderTag, detectOnConnect } from './kubecloud.js';
 
 // The Namespace dropdown's "type one in" entry — not a name Kubernetes allows.
 const TYPE_NAMESPACE = '\u0001type';
@@ -80,7 +81,7 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
   let typesError = '';
   let loadingTypes = true;
   // null = Overview, 'helm' = the Helm releases list, '3d' = the 3D view, else a discovered resource type.
-  let selected = ['helm', '3d', 'starred'].includes(opts.initialView) ? opts.initialView : null;
+  let selected = ['helm', '3d', 'starred', 'cloud'].includes(opts.initialView) ? opts.initialView : null;
   let rows = [];
   let rowsError = '';
   let loadingRows = false;
@@ -125,6 +126,13 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
   let helmReleases = [];
   let helmError = '';
   let helmLoading = false;
+  // The Cloud view (kubecloud.js): which cloud, its node pools, cloud identities, aws-auth.
+  const cloudKey = providerKey(kubeSpec);
+  // Yours first, then the cluster's own (remembered), then what the row knew.
+  const knownProvider = () => providerFor({ ...kubeSpec, provider: opts.provider || null }) || null;
+  let cloudData = null;
+  let cloudError = '';
+  let cloudLoading = false;
   let helmRowFilter = '';
 
   // The 3D view — created once and kept alive for the pane's lifetime
@@ -868,6 +876,13 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
         class: 'sb-item' + (selected === '3d' ? ' current' : ''),
         onClick: select3d,
       }, el('span', { class: 'st', style: 'background:var(--accent)' }), el('span', { class: 'name', text: '🧊 3D view' })),
+      // Which cloud, and what is worth knowing on it — EKS node groups, GKE
+      // node pools, AKS agent pools, cloud identities, aws-auth.
+      q ? null : el('div', {
+        class: 'sb-item' + (selected === 'cloud' ? ' current' : ''),
+        onClick: selectCloud,
+      }, el('span', { class: 'st', style: 'background:var(--accent)' }), el('span', { class: 'name', text: '☁ Cloud' }),
+        providerBadge(cloudData?.provider || knownProvider())),
       q && !cats.length ? el('div', { class: 'sb-empty', text: 'No resource kind matches that.' }) : null,
       ...cats.map((cat) => {
         const list = byCat.get(cat).sort((a, b) => a.kind.localeCompare(b.kind));
@@ -1111,6 +1126,22 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
     return el('div', {}, head, ...rows, starredError ? el('div', { class: 'hint', text: starredError }) : null);
   };
 
+  const selectCloud = () => { stopLive(); selected = 'cloud'; podScope = null; render(); loadCloud(); };
+  const loadCloud = async () => {
+    cloudLoading = true;
+    render();
+    const r = await window.api.kube.cloudInfo({ spec: kubeSpec, provider: knownProvider() }).catch((e) => ({ ok: false, error: e.message }));
+    cloudLoading = false;
+    if (!r.ok && !r.provider) { cloudError = r.error || r.problems?.nodes || 'Could not read the cluster'; cloudData = null; }
+    else { cloudError = ''; cloudData = r; rememberProvider(cloudKey, r.provider).catch(() => {}); }
+    if (selected === 'cloud') render();
+  };
+  // A pool from the Cloud view: the Nodes list, filtered to it by its label.
+  const openPool = (selector, label) => {
+    const t = types.find((x) => x.name === 'nodes');
+    if (t) selectType(t, { selector, scopeLabel: label });
+  };
+
   const selectHelm = () => {
     stopLive();
     selected = 'helm';
@@ -1226,6 +1257,13 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
     if (!selected) return overviewPanel();
     if (selected === 'helm') return helmPanel();
     if (selected === '3d') return threeDPanel();
+    if (selected === 'cloud') {
+      return cloudPanel(cloudData, {
+        loading: cloudLoading, error: cloudError, known: knownProvider(),
+        clusterName: kubeSpec.kubeClusterName || '', onRefresh: loadCloud, openPool,
+        onTag: (id) => setProviderTag(cloudKey, { provider: id }).then(() => render()),
+      });
+    }
     if (selected === 'starred') return starredPanel();
     // Actionable information — ready/desired for a Deployment,
     // ready/restarts for a Pod — not just a bare status. Blank for a kind this has no special-cased
@@ -3700,6 +3738,9 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
   if (selected === 'helm') loadHelm();
   else if (selected === '3d') select3d();
   else if (selected === 'starred') loadStarred();
+  else if (selected === 'cloud') loadCloud();
+  // Opening it is connecting to it: ask which cloud, if nothing has said yet.
+  detectOnConnect(kubeSpec, kubeSpec).then(() => render()).catch(() => {});
   window.api.kube.resourceTypes({ spec: kubeSpec })
     .then((r) => {
       loadingTypes = false;

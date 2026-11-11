@@ -73,7 +73,11 @@ async function supported({ proxy, home } = {}) {
  * not uuid'd — like an app or a database, and unlike an ssh node.
  */
 function toKubeCluster(c, { proxy, home } = {}) {
+  const kp = require('./kubeprovider');
+  const name = c?.kube_cluster_name || c?.cluster_name || '';
   return {
+    // Which cloud, from what Teleport says about it (kubeprovider.js).
+    provider: kp.combine(kp.fromLabels(c?.labels || {}), kp.fromName(name)),
     id: `kube:tsh:${proxy || ''}${home ? ':' + home : ''}:${c?.cluster_name || c?.kube_cluster_name || ''}`,
     kind: 'kube',
     source: 'teleport',
@@ -182,9 +186,18 @@ async function listContexts({ extraPaths = [] } = {}) {
   let data;
   try { data = JSON.parse(r.stdout); } catch { return { ok: false, error: 'Could not read the kubeconfig as JSON', contexts: [], paths }; }
   const usersByName = new Map((data.users || []).map((u) => [u.name, u.user]));
+  const clustersByName = new Map((data.clusters || []).map((cl) => [cl.name, cl.cluster || {}]));
+  const kp = require('./kubeprovider');
   const contexts = (data.contexts || []).map((c) => {
-    const teleport_ = teleportOriginOf(usersByName.get(c.context?.user));
+    const user = usersByName.get(c.context?.user);
+    const teleport_ = teleportOriginOf(user);
+    // Which cloud, from the kubeconfig itself — the endpoint, the names, the credential plugin.
+    const provider = kp.combine(
+      kp.fromKubeconfig({ contextName: c.name, clusterName: c.context?.cluster || '', server: clustersByName.get(c.context?.cluster)?.server || '', exec: user?.exec || null }),
+      kp.fromName(teleport_?.kubeCluster || c.name),
+    );
     return {
+      provider,
       id: teleport_ ? `kube:tsh:${teleport_.proxy}:${teleport_.cluster}:${teleport_.kubeCluster}` : `kube:direct:${c.name}`,
       kind: 'kube',
       // A context tsh itself created (its user entry execs `tsh kube

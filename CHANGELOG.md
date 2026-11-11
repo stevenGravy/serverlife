@@ -11,6 +11,33 @@ tagged `v<version>`.
 
 ---
 
+## [0.35.0] — 2026-11-11
+
+Kubernetes clusters say which cloud they are on — an EKS, GKE or AKS badge
+beside the ☸, found from the kubeconfig, Teleport's labels or the cluster
+itself when you connect, or set by hand — and the cluster browser's Cloud
+view shows what is usually looked up in the cloud's console: node groups and
+pools, workload identity, EKS's aws-auth, and a link to the console page.
+
+### Added
+
+- **Which cloud a Kubernetes cluster is on** — an outlined EKS, GKE or AKS
+  badge (or minikube, kind, Docker Desktop, k3s) beside the ☸, found from the
+  kubeconfig, Teleport's labels, or the cluster itself.
+- **☁ Cloud in the cluster browser** — node groups and pools (EKS node groups,
+  Karpenter, Fargate; GKE node pools, Spot, Autopilot; AKS agent pools), the
+  service accounts mapped to cloud identities (IRSA, GKE and Azure Workload
+  Identity), EKS's aws-auth mappings, and a link to the cluster in its cloud's
+  console.
+- **Connecting identifies the cloud** — expanding a cluster, opening it or
+  logging in asks it once (its version, then its nodes), so a cluster reached
+  through Teleport without labels gets its badge on first use.
+- **Set a cluster's cloud by hand** — right-click → *Cloud*: EKS, GKE, AKS or a
+  local one, with the region, account, project or resource group its console
+  link needs; *Detect automatically* undoes it.
+
+---
+
 ## [0.34.0] — 2026-11-11
 
 Phases put together from setups — languages, cloud CLIs, Postgres and Redis,

@@ -1,3 +1,4 @@
+import { cloudMenuItem } from './kubecloud.js';
 import { serverIcon } from './hosticons.js';
 import {
   clusterIcon, clusterColor, clusterMarkMenu,
@@ -30,7 +31,7 @@ import { loadMacros, macroCategories } from './macros.js';
 import { startNodeLoop } from './nodewatch.js';
 import {
   kubeGroupRows, kubeGroupCount, kubeHostsForProfile,
-  kubeContextRow, availableClusterRow, kubeIcon, openKubeHostMenu, refreshKubeFor,
+  kubeContextRow, availableClusterRow, kubeMarks, openKubeHostMenu, refreshKubeFor,
 } from './kubepanel.js';
 import { isNarrowed, noteRead, heldBackFor, lastFullReadFor } from './narrowed.js';
 import {
@@ -3250,7 +3251,7 @@ function kubeRequestableRow(host, groupKey, opts = {}, watched = false) {
     el('span', { class: 'st' }),
     watched ? el('span', { class: 'hwatch', text: '\u{1F514}', title: 'Watched — you will be told if this cluster leaves the inventory' }) : null,
     el('span', { class: 'name', text: host.name }),
-    kubeIcon(),
+    ...kubeMarks(host),
     labelSummary(host) ? el('span', { class: 'tag', text: labelSummary(host) }) : null,
     el('span', { class: 'tag req', text: 'req' }));
   row.addEventListener('dblclick', () => requestKubeAccessFor(host));
@@ -3265,6 +3266,8 @@ function kubeRequestableRow(host, groupKey, opts = {}, watched = false) {
         label: isWatched(host) ? 'Stop watching this cluster' : 'Watch this cluster', icon: '\u{1F514}',
         onClick: () => toggleWatch(host, groupKey),
       },
+      { sep: true },
+      cloudMenuItem(host),
     ];
     // Already a complete menu item (its own label, its own submenu) — see
     // folderMenuFor's own return shape — not a bare list to wrap again.
@@ -3461,7 +3464,7 @@ function hostRow(host, labelText, groupKey = null, opts = {}) {
     el('span', { class: 'nwrap' },
       el('span', { class: 'name', text: host.name || host.alias }),
       // What kind of thing it is: ☸ for a Kubernetes cluster drawn here (a watched one gone missing), a server otherwise.
-      host.kind === 'kube' ? kubeIcon() : serverIcon(host.type === 'teleport' ? 'Teleport SSH server' : 'SSH server'),
+      ...(host.kind === 'kube' ? kubeMarks(host) : [serverIcon(host.type === 'teleport' ? 'Teleport SSH server' : 'SSH server')]),
       icon ? el('span', { class: 'hico', title: 'Right-click → Icon… to change it', text: icon }) : null,
       /*
        * Two nodes answering to one hostname. The row is otherwise identical

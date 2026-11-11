@@ -892,7 +892,7 @@ function kubeCard(pane, view, host, folder, k) {
     el('div', { class: 'hp-line' },
       el('span', { class: 'st' }),
       el('span', { class: 'hp-name', text: host.name }),
-      lastKubepanel ? lastKubepanel.kubeIcon() : null,
+      ...(lastKubepanel ? lastKubepanel.kubeMarks(host) : []),
       host.requestable
         ? el('span', { class: 'tag req', title: 'Not yours to open yet — double-click to start a request.', text: 'req' })
         : host.availableCluster
@@ -1052,7 +1052,7 @@ function kubeTableRow(pane, view, host, folder, k, gridTemplate) {
     el('div', { class: 'hp-td name' },
       el('span', { class: 'st' }),
       el('span', { class: 'hp-name', text: host.name }),
-      lastKubepanel ? lastKubepanel.kubeIcon() : null),
+      ...(lastKubepanel ? lastKubepanel.kubeMarks(host) : [])),
     el('div', { class: 'hp-td status' },
       host.requestable ? el('span', { class: 'tag req', text: 'req' })
         : host.availableCluster ? el('span', { class: 'tag', text: 'available' }) : null),

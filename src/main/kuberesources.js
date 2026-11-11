@@ -573,6 +573,61 @@ async function getRawList(spec = {}, { name, namespaced, namespace } = {}) {
 }
 
 /**
+ * Which cloud, from the cluster itself, as cheaply as it can be asked — on
+ * connecting to it, not on a timer. The server's version first: an EKS or
+ * GKE one says so (v1.35.9-eks-…, v1.35.8-gke.…), and any signed-in user
+ * may read it. Only when that is not enough, the nodes: their providerID
+ * and labels.
+ */
+async function detectProvider(spec = {}) {
+  const kp = require('./kubeprovider');
+  const { bin, baseArgs, env } = kube.kubectlArgsFor({ ...spec, namespace: null });
+  const ver = await run(bin, [...baseArgs, 'version', '-o', 'json', '--request-timeout=15s'], { env, timeout: 25000 });
+  let version = '';
+  try { version = JSON.parse(ver.stdout || '{}').serverVersion?.gitVersion || ''; } catch { version = ''; }
+  if (!version) return { ok: false, provider: null, error: plain(ver.stderr || '') || 'Could not reach the cluster' };
+  let provider = kp.fromCluster({ version });
+  if (!provider) {
+    const nodes = await getRawList(spec, { name: 'nodes', namespaced: false });
+    provider = kp.fromCluster({ nodes: nodes.items || [], version });
+  }
+  return { ok: true, provider, version };
+}
+
+/**
+ * What the Cloud view shows (kubeprovider.js): the nodes, every service
+ * account (for the ones mapped to a cloud identity), EKS's aws-auth, and the
+ * server's version — read at once; each that the role may not read is said
+ * rather than failing the rest.
+ */
+async function cloudInfo(spec = {}, { provider = null } = {}) {
+  const kp = require('./kubeprovider');
+  const { bin, baseArgs, env } = kube.kubectlArgsFor({ ...spec, namespace: null });
+  const [nodes, sas, auth, ver] = await Promise.all([
+    getRawList(spec, { name: 'nodes', namespaced: false }),
+    getRawList(spec, { name: 'serviceaccounts', namespaced: true }),
+    run(bin, [...baseArgs, '-n', 'kube-system', 'get', 'configmap', 'aws-auth', '-o', 'json'], { env, timeout: 20000 }),
+    run(bin, [...baseArgs, 'version', '-o', 'json'], { env, timeout: 20000 }),
+  ]);
+  let awsAuth = null;
+  if (auth.ok) { try { awsAuth = JSON.parse(auth.stdout); } catch { awsAuth = null; } }
+  let version = '';
+  try { version = JSON.parse(ver.stdout || '{}').serverVersion?.gitVersion || ''; } catch { version = ''; }
+  const summary = kp.summarize({ provider, nodes: nodes.items, serviceAccounts: sas.items, awsAuth, version });
+  return {
+    ok: nodes.ok || sas.ok,
+    ...summary,
+    consoleUrl: kp.consoleUrl(summary.provider, spec.kubeClusterName || ''),
+    problems: {
+      nodes: nodes.ok ? '' : nodes.error,
+      serviceAccounts: sas.ok ? '' : sas.error,
+      // Most EKS clusters now use access entries; a missing aws-auth is ordinary.
+      awsAuth: auth.ok ? '' : (/NotFound|not found/i.test(auth.stderr || '') ? 'none' : plain(auth.stderr || '')),
+    },
+  };
+}
+
+/**
  * "Who can do that?" — every Role/ClusterRole reachable from every
  * RoleBinding/ClusterRoleBinding, matched against one verb/resource the
  * same way the API server would (kuberbac.js). Cluster-scoped kinds are
@@ -638,7 +693,7 @@ async function top(spec = {}, { namespace } = {}) {
   return { ok: nodes.ok || pods.ok, nodes, pods };
 }
 
-module.exports = {
+module.exports = { cloudInfo, detectProvider,
   parseApiResources, categorize, discoverResourceTypes, getResources, getYaml, describe, deleteResource, canI, access, top,
   detailOf, conditionStatus, diffYaml, applyYaml, validateYaml, topPods, topNodes, topPodContainers, cordonNode, drainNode, getObject, crdColumnsFor, rowFrom, columnsFromCrdObject,
   getRawList, whoCan, patchSecretStringData, sampleChecksFromRules,

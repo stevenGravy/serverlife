@@ -2562,6 +2562,16 @@ function registerIpc() {
   // included automatically — see kuberesources.js.
   handle('kube:resourceTypes', async (opts) => kuberesources.discoverResourceTypes(opts?.spec || {}));
   handle('kube:resources', async (opts) => kuberesources.getResources(opts?.spec || {}, opts?.type || {}));
+  // The Cloud view: node pools, cloud identities, aws-auth, the console link (kubeprovider.js).
+  handle('kube:cloudInfo', async (opts) => kuberesources.cloudInfo(opts?.spec || {}, { provider: opts?.provider || null }));
+  handle('kube:detectProvider', async (opts) => kuberesources.detectProvider(opts?.spec || {}));
+  // The cluster's page in its cloud's console — built here from what is known, never a URL from the renderer.
+  handle('kube:openCloudConsole', async ({ provider, clusterName } = {}) => {
+    const url = require('./kubeprovider').consoleUrl(provider, clusterName || '');
+    if (!url) throw new Error('Not enough is known about this cluster — region, project or resource group — to link to its console');
+    await shell.openExternal(url);
+    return url;
+  });
   handle('kube:resourceYaml', async (opts) => kuberesources.getYaml(opts?.spec || {}, opts?.target || {}));
   handle('kube:diffYaml', async (opts) => kuberesources.diffYaml(opts?.spec || {}, { yaml: opts?.yaml }));
   handle('kube:applyYaml', async (opts) => kuberesources.applyYaml(opts?.spec || {}, { yaml: opts?.yaml }));
