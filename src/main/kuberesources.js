@@ -706,6 +706,49 @@ async function heartbeatTeleport({ proxy, kubeCluster, home } = {}) {
   return heartbeat({ contextName: contextOf(), kubeconfigPaths: [file] }, { gate: false });
 }
 
+/**
+ * Teleport's own heartbeats for its Kubernetes agents — the kube_server each
+ * agent keeps announcing, as an SSH node does. `tsh kube ls` reads exactly
+ * these and drops the expiry when it prints; `tctl get kube_servers`, run with
+ * your own login, keeps it — so it needs no Kubernetes access to the cluster,
+ * only to see the agent. One call per Teleport cluster covers all of its
+ * Kubernetes clusters. Never run without a good login in that home (tctl does
+ * not log in again, but nothing here should get that far), and said plainly
+ * when there is no tctl.
+ *
+ * Age is worked out as for SSH nodes (renderer/js/heartbeat.js): an announce
+ * pushes `expires` a full TTL ahead, so age = TTL − time left, the TTL read off
+ * the freshest agent and rounded up to whole five minutes.
+ */
+async function kubeAgents({ proxy, home } = {}) {
+  const teleport = require('./teleport');
+  const effectiveHome = teleport.expandHome(teleport.tshEnv(home || null, proxy).TELEPORT_HOME || process.env.TELEPORT_HOME || '~/.tsh');
+  if (!teleportLoginGood(effectiveHome, proxy)) return { ok: false, state: 'idle', error: 'the Teleport login has expired' };
+  const r = await teleport.tctlRun(['get', 'kube_servers', '--format=json'], { proxy, home: effectiveHome, timeout: 30000 });
+  if (!r.ok) {
+    if (/ENOENT|not found|command not found/i.test(r.stderr) && !/kube_server/i.test(r.stderr)) return { ok: false, state: 'notctl', error: 'tctl is not installed beside tsh' };
+    return { ok: false, state: 'error', error: r.stderr.split('\n').find((l) => l.trim()) || 'tctl get kube_servers failed' };
+  }
+  let list;
+  try { list = JSON.parse(r.stdout || '[]'); } catch { return { ok: false, state: 'error', error: 'Unexpected output from tctl' }; }
+  const now = Date.now();
+  const agents = (Array.isArray(list) ? list : []).map((s) => ({
+    cluster: s?.spec?.cluster?.metadata?.name || s?.metadata?.name || '',
+    hostname: s?.spec?.hostname || '',
+    hostId: s?.spec?.host_id || '',
+    version: s?.spec?.version || '',
+    leftMs: s?.metadata?.expires ? Date.parse(s.metadata.expires) - now : null,
+  })).filter((a) => a.cluster);
+  const maxLeft = Math.max(0, ...agents.map((a) => a.leftMs || 0));
+  const ttlMs = Math.max(600000, Math.ceil(maxLeft / 300000) * 300000);
+  const clusters = {};
+  for (const a of agents) {
+    const ageMs = a.leftMs === null ? null : Math.max(0, ttlMs - a.leftMs);
+    (clusters[a.cluster] ||= []).push({ hostname: a.hostname, hostId: a.hostId, version: a.version, ageMs, leftMs: a.leftMs });
+  }
+  return { ok: true, at: now, ttlMs, clusters };
+}
+
 /** Whether this home's Teleport login (keys/<proxy>/<user>.crt) has at least two minutes left — read from disk, never by running tsh. */
 function teleportLoginGood(home, proxy) {
   const fs = require('fs');
@@ -861,7 +904,7 @@ async function top(spec = {}, { namespace } = {}) {
   return { ok: nodes.ok || pods.ok, nodes, pods };
 }
 
-module.exports = { cloudInfo, detectProvider, heartbeat, heartbeatState, heartbeatTeleport, teleportCredFor,
+module.exports = { cloudInfo, detectProvider, heartbeat, heartbeatState, heartbeatTeleport, teleportCredFor, kubeAgents,
   parseApiResources, categorize, discoverResourceTypes, getResources, getYaml, describe, deleteResource, canI, access, top,
   detailOf, conditionStatus, diffYaml, applyYaml, validateYaml, topPods, topNodes, topPodContainers, cordonNode, drainNode, getObject, crdColumnsFor, rowFrom, columnsFromCrdObject,
   getRawList, whoCan, patchSecretStringData, sampleChecksFromRules,

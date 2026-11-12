@@ -1,6 +1,6 @@
 {
   "name": "serverlife",
-  "version": "0.36.0",
+  "version": "0.37.0",
   "description": "Teleport & SSH terminal, file manager and multi-exec for macOS",
   "main": "src/main/main.js",
   "scripts": {

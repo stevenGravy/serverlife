@@ -8,7 +8,7 @@ import { groupKeyFor } from './folders.js';
 import { isWatched, toggleWatch } from './watch.js';
 import { askNamespace, extraNamespaces } from './kubenamespaces.js';
 import { providerFor, providerBadge, cloudMenuItem, detectOnConnect } from './kubecloud.js';
-import { startKubeHeartbeats, kubeBeatTag, contextBeatKey, teleportBeatKey } from './kubeheartbeat.js';
+import { startKubeHeartbeats, kubeBeatTag, contextBeatKey, teleportBeatKey, listedBeatTag, beatTimeFor } from './kubeheartbeat.js';
 
 // Dynamic, not static: sidebar.js already imports this module, and a static
 // import back would close the cycle — the same workaround sessions.js and
@@ -69,7 +69,7 @@ function ensureLoaded() {
         key: teleportBeatKey(p.proxy, p.homeDir, cl.name),
         teleport: { proxy: p.proxy, kubeCluster: cl.name, home: p.homeDir || null },
       }))),
-  ]);
+  ], () => (state.teleportProfiles || []).filter((p) => !p.expired && p.validUntil && Date.parse(p.validUntil) > Date.now() + 120000));
   if (loaded || loading) return;
   loading = true;
   window.api.kube.contexts({ extraPaths: state.settings.kubeconfigPaths || [] })
@@ -344,6 +344,32 @@ export function kubeMarks(x) {
   return [kubeIcon(), providerBadge(providerFor(x, teleportEntryFor(x)))];
 }
 
+/*
+ * A Kubernetes row's heartbeat, wherever it is drawn (the sidebar, the
+ * Hosts pane): the tag, and the time for sorting by heartbeat. The same
+ * three kinds as the rows — a logged-in context, one available but not
+ * logged in to, one that can only be requested.
+ */
+function beatWhoFor(host) {
+  if (host.kubeContext) {
+    const c = host.kubeContext;
+    return { key: contextBeatKey(c), proxy: c.teleportProxy, name: c.kubeClusterName };
+  }
+  if (host.availableCluster) {
+    const p = host.profile || {};
+    return { key: teleportBeatKey(p.proxy, p.homeDir, host.availableCluster.name), proxy: p.proxy, name: host.availableCluster.name };
+  }
+  return { key: null, proxy: host.profile?.proxy || host.proxy, name: host.name, requestable: true };
+}
+export function kubeBeatFor(host) {
+  const w = beatWhoFor(host);
+  return w.requestable ? listedBeatTag(w.proxy, w.name) : kubeBeatTag(w.key, { proxy: w.proxy, name: w.name });
+}
+export function kubeBeatTimeFor(host) {
+  const w = beatWhoFor(host);
+  return beatTimeFor(w.key, { proxy: w.proxy, name: w.name });
+}
+
 /** The best provider answer for a context or cluster, for the browser to start from. */
 export function kubeProviderOf(x) { return providerFor(x, teleportEntryFor(x)); }
 
@@ -473,7 +499,7 @@ export function availableClusterRow(p, cluster, opts = {}) {
     opts.watched ? el('span', { class: 'hwatch', text: '\u{1F514}', title: 'Watched — you will be told if this cluster leaves the inventory' }) : null,
     el('span', { class: 'name', text: cluster.name }),
     ...kubeMarks(cluster),
-    kubeBeatTag(teleportBeatKey(p.proxy, p.homeDir, cluster.name)),
+    kubeBeatTag(teleportBeatKey(p.proxy, p.homeDir, cluster.name), { proxy: p.proxy, name: cluster.name }),
     labelTag(cluster.labels),
     el('span', { class: 'tag', text: busy ? 'logging in…' : 'not connected' }));
 }
@@ -711,7 +737,7 @@ export function kubeContextRow(c, opts = {}) {
     opts.watched ? el('span', { class: 'hwatch', text: '\u{1F514}', title: 'Watched — you will be told if this cluster leaves the inventory' }) : null,
     el('span', { class: 'name', text: c.kubeClusterName || c.name }),
     ...kubeMarks(c),
-    kubeBeatTag(contextBeatKey(c)),
+    kubeBeatTag(contextBeatKey(c), { proxy: c.teleportProxy, name: c.kubeClusterName }),
     c.current ? el('span', { class: 'tag', text: 'current' }) : null,
     // Visible even collapsed — "is anything of mine still forwarding here"
     // should not require expanding the cluster to find out.

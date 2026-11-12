@@ -16,6 +16,7 @@ are looking at the thing you are asking about.
 - [The file browser and transfers](#file-browser-and-transfers)
 - [Starred hosts and folders](#starred-hosts-and-folders)
 - [Folders in the host list](#folders-in-the-host-list)
+- [The Hosts pane](#the-hosts-pane)
 - [What a host remembers](#what-a-host-remembers)
 - [Keyword highlighting](#keyword-highlighting)
 - [Local shells](#local-shells)
@@ -570,6 +571,32 @@ than quietly overwriting the folders you have since edited; *replace* is there
 when overwriting is what you meant.
 
 ---
+
+## The Hosts pane
+
+A group's hosts — a Teleport cluster's nodes and Kubernetes clusters, an
+ssh_config's hosts — with the room a terminal would have had, splittable and
+closable like any other pane.
+
+- **Open it** from a group's menu: *Open this list in a pane* opens it in a
+  new tab when clicked, and its arrow offers *Beside this pane* and *Below this
+  pane*. A group past *Hosts listed per group* ends in *… N more — open in a
+  pane* too.
+- **List, Boxes or Table**, with folders on or off, and the same filter box as
+  the sidebar.
+- **All / SSH / K8s** — the sidebar's filter, shared: choosing in the pane
+  changes the sidebar too, and the other way round, so the two never show
+  different things.
+- **Sort** by name, status, **heartbeat**, or any label's value. *Sort:
+  Heartbeat* puts what has gone quiet first, then the rest by how long ago each
+  was last heard — SSH nodes and Kubernetes clusters together — and those with
+  no heartbeat last.
+- **The table** has Name, Status, **Heartbeat** and Address columns (and, with
+  *Label columns*, one per shared label). Click a header to sort by it; click
+  it again to turn the order round — ▲ and ▼ say which way.
+- **Heartbeats** show on every card and row, Kubernetes ones included (see
+  [Nodes that have gone quiet](#nodes-that-have-gone-quiet)), as *Settings →
+  Heartbeat times* says: how long ago (`<1m`, the default) or the clock time.
 
 ## What a host remembers
 
@@ -1785,17 +1812,36 @@ come back, or want to know whether the list is telling you the truth. It is in
 minutes because changing the text rebuilds the list; the exact seconds are in
 each row's tooltip.
 
+**Heartbeat times** (*Settings*) reads them as how long ago — `<1m`, `2m`,
+the default — or as the exact clock time each was heard; the tooltip always
+gives the exact time.
+
 **Kubernetes clusters get heartbeats too**, with *Heartbeats* on. Teleport
 publishes none for a Kubernetes cluster (`tsh kube ls` carries no expiry), so
 each cluster is asked — `GET /readyz`, which any signed-in user may read —
 once a minute for one you are logged in to, every five minutes for one you
 can use but have not logged in to (through a kubeconfig of the app's own,
-never `~/.kube/config`). The row shows `♥ 0.5s` while it answers, an amber
+never `~/.kube/config`). The row shows `♥ <1m` while it answers — in
+minutes, as an SSH node's heartbeat is, with how fast it answered in the
+tooltip — an amber
 `⚠ 3m` counting from when it stopped, `⚠ log in` when its credentials were
-refused or a sign-in plugin is missing, and `· no access` when Teleport
-answered that your role gives no Kubernetes access to it. A cluster you can
+refused or a sign-in plugin is missing, and `♥ listed · no access` when
+Teleport answered that your role gives no Kubernetes access to it (no
+`kubernetes_groups` or `kubernetes_users`) — it lists the cluster, so its agent
+is alive, but the cluster itself cannot be asked. A cluster you can
 only request cannot be asked, but Teleport lists it only while its agent
 heartbeats, so it says `♥ listed`.
+
+**Teleport's own agent heartbeat**, where `tctl` is installed beside `tsh`:
+every Kubernetes agent keeps announcing a `kube_server` to Teleport, as an SSH
+node does, and `tctl get kube_servers` run with your own login — no access to
+the cluster needed, only to see the agent — gives how long ago each was heard
+from. One call per Teleport cluster a minute covers all its Kubernetes
+clusters. A cluster your role cannot ask, or can only request, shows the
+agent's heartbeat (`♥ <1m`) instead of `listed`; one whose agent has gone
+quiet past *Warn about nodes that have gone quiet* shows `⚠ agent 6m`; and a
+cluster that is not answering while its agent is fine says so in the tooltip
+— the API server, not Teleport, is what has stopped.
 
 A check never makes tsh log in again or ask for MFA: a cluster reached
 through Teleport is asked only while its cached certificate, or for one not

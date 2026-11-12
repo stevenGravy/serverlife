@@ -11,6 +11,45 @@ tagged `v<version>`.
 
 ---
 
+## [0.37.0] — 2026-11-12
+
+Heartbeats everywhere a host is listed: Kubernetes agents heard through
+Teleport itself (no Kubernetes access needed), the Hosts pane showing and
+sorting by them — with a Heartbeat column in its table — and the pane
+following the sidebar's All / SSH / K8s filter.
+
+### Added
+
+- **Teleport's own heartbeats for Kubernetes agents** — with `tctl` beside
+  `tsh`, the agents' `kube_server` heartbeats are read with your login (no
+  Kubernetes access needed): clusters your role cannot ask, or can only
+  request, show how long ago their agent was heard from, and a quiet agent is
+  flagged like a quiet SSH node.
+- **Heartbeats in the Hosts pane**, Kubernetes clusters included, and **Sort:
+  Heartbeat** — the quiet ones first, then by how long ago each was heard.
+- **A Heartbeat column in the pane's table**, and every sortable header turns
+  its order round on a second click (▲ / ▼).
+- **All / SSH / K8s in the Hosts pane**, shared with the sidebar's filter.
+- **Heartbeat times** — *Settings*: how long ago (the default) or the exact
+  clock time; the tooltip always has the exact time.
+
+### Changed
+
+- **Open this list in a pane** opens in a new tab with a click; beside and
+  below are on its arrow.
+- **Kubernetes heartbeats read like SSH ones** — `♥ <1m`, `♥ 2m`, with the
+  response time in the tooltip.
+- **A cluster your role cannot ask** reads `♥ listed · no access` (or its
+  agent's heartbeat), not a bare "no access".
+
+### Fixed
+
+- **The Hosts pane ignored the sidebar's All / SSH / K8s filter.**
+- **A healthy Kubernetes agent was flagged quiet** when the minute between
+  reads was counted as silence.
+
+---
+
 ## [0.36.0] — 2026-11-12
 
 Heartbeats for Kubernetes clusters — whether each one's API server is

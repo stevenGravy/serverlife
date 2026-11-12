@@ -1,5 +1,6 @@
 import { state } from './state.js';
 import { el } from './util.js';
+import { beatText, beatClock } from './heartbeat.js';
 
 /*
  * Kubernetes heartbeats: is each cluster's API server answering, and how
@@ -19,6 +20,12 @@ import { el } from './util.js';
  * request cannot be asked — but Teleport lists a cluster only while its
  * agent keeps heartbeating, so being listed is said as such.
  *
+ * And Teleport's own heartbeat for each cluster's agent, where tctl is
+ * there: one `tctl get kube_servers` a minute per Teleport cluster, with your
+ * login (main/kuberesources.js kubeAgents) — no Kubernetes access needed, so
+ * a cluster your role cannot ask, or can only request, still says how long
+ * ago its agent was heard from, and one whose agent has gone quiet says so.
+ *
  * Every target has its own key — its context and kubeconfig file, or its
  * Teleport cluster, tsh home and name — so the same cluster name in two
  * clusters or two homes never shares a heartbeat, and a round never starts
@@ -32,6 +39,29 @@ const AT_ONCE = 3;
 const beats = new Map();      // context id -> { state, ms, at, detail, okAt, failingSince }
 let timer = null;
 let running = false;
+const agentsByProxy = new Map();   // bare proxy -> { at, ok, state, clusters: { name: [{ ageMs, hostname, version }] } }
+const AGENTS_EVERY_MS = 60000;
+const bare = (p) => String(p || '').toLowerCase().replace(/^https?:\/\//, '').replace(/:443$/, '');
+// Quiet past this, as for SSH nodes (Settings → Warn about nodes that have gone quiet).
+const quietMs = () => Math.max(1, Number(state.settings?.staleNodeMinutes ?? 2) || 2) * 60000;
+
+/** The freshest of a Kubernetes cluster's agents, as tctl last read them — or null when not known. */
+export function kubeAgentInfo(proxy, name) {
+  const e = agentsByProxy.get(bare(proxy));
+  const list = e?.ok ? e.clusters?.[name] : null;
+  if (!list?.length) return null;
+  // Aged by how long ago the list was read, so a pause in reading never makes an agent look quiet.
+  const since = Date.now() - e.at;
+  const atRead = list.map((a) => a.ageMs).filter((x) => x !== null);
+  const freshest = atRead.length ? Math.min(...atRead) : null;
+  return {
+    // Shown counting on from the read; judged quiet by the age at the read, so a minute between reads is never a missed heartbeat.
+    ageMs: freshest === null ? null : freshest + since,
+    readAgeMs: freshest,
+    at: freshest === null ? null : e.at - freshest,
+    count: list.length, versions: [...new Set(list.map((a) => a.version).filter(Boolean))],
+  };
+}
 
 const on = () => !!state.settings?.showHeartbeats && state.settings?.quietRemote !== true;
 
@@ -40,12 +70,23 @@ const on = () => !!state.settings?.showHeartbeats && state.settings?.quietRemote
  * gives what to ask now: { key, spec } for a kubeconfig context, or
  * { key, teleport: { proxy, kubeCluster, home } } for one not logged in to.
  */
-export function startKubeHeartbeats(getTargets) {
+export function startKubeHeartbeats(getTargets, getProfiles = () => []) {
   if (timer) return;
   const tick = async () => {
     if (running || !on()) return;
     running = true;
     try {
+      // Teleport's agent heartbeats: one tctl call per Teleport cluster, from a home whose login is good.
+      const seen = new Set();
+      for (const p of getProfiles()) {
+        const key = bare(p.proxy);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const e = agentsByProxy.get(key);
+        if (e && (Date.now() - e.at < AGENTS_EVERY_MS || e.state === 'notctl')) continue;
+        const r = await window.api.kube.agents({ proxy: p.proxy, home: p.homeDir || null }).catch((err) => ({ ok: false, state: 'error', error: err.message }));
+        agentsByProxy.set(key, { ...r, at: r.at || Date.now() });
+      }
       const due = getTargets().filter((t) => {
         const b = beats.get(t.key);
         // MFA is not asked again this run: a check must not keep asking for a touch.
@@ -85,29 +126,63 @@ export const contextBeatKey = (c) => `ctx\u0000${c.id}\u0000${c.contextName || c
 /** A cluster not logged in to: its Teleport cluster, tsh home and name. */
 export const teleportBeatKey = (proxy, home, name) => `tsh\u0000${String(proxy || '').replace(/:443$/, '')}\u0000${home || ''}\u0000${name}`;
 
-/** Being listed by Teleport is a heartbeat of its own: the agent has announced itself within the last few minutes. */
-export function listedBeatTag() {
+const agentLine = (a) => (a ? `Teleport agent${a.count > 1 ? `s (${a.count})` : ''}: last heartbeat ${secsAgo(a.ageMs)} ago${a.at ? `, at ${beatClock(a.at)}` : ''}${a.versions.length ? ` · Teleport ${a.versions.join(', ')}` : ''}` : '');
+const secsAgo = (ms) => (ms === null ? '?' : ms < 60000 ? `${Math.round(ms / 1000)}s` : ago(ms));
+
+/** The agent's own heartbeat as the tag, for a cluster that cannot be asked itself. */
+function agentTag(a, extra = '') {
+  if (a.readAgeMs !== null && a.readAgeMs > quietMs()) {
+    return el('span', { class: 'tag stale', title: `${agentLine(a)} — it has gone quiet.${extra ? `\n${extra}` : ''}`, text: `⚠ agent ${beatText(a.at)}` });
+  }
+  // As an SSH node's heartbeat reads (Settings → Heartbeat times); the exact time is in the tooltip.
+  return el('span', { class: 'tag hb', title: `${agentLine(a)}${extra ? `\n${extra}` : ''}`, text: `♥ ${a.at === null ? '?' : beatText(a.at)}` });
+}
+
+/** A cluster you could only request: Teleport's heartbeat for its agent when tctl can read it, else that Teleport lists it. */
+export function listedBeatTag(proxy, name) {
   if (!on()) return null;
+  const a = proxy && name ? kubeAgentInfo(proxy, name) : null;
+  if (a) return agentTag(a, 'You have no access to ask the cluster itself.');
   return el('span', { class: 'tag hb', title: 'Listed by Teleport — its agent has heartbeated within the last few minutes. You have no access to ask the cluster itself.', text: '♥ listed' });
 }
 
 /** The row's heartbeat tag, or null while Heartbeats is off or nothing is known yet. */
-export function kubeBeatTag(key) {
+export function kubeBeatTag(key, { proxy = null, name = null } = {}) {
   if (!on()) return null;
   const b = beats.get(key);
+  const a = proxy && name ? kubeAgentInfo(proxy, name) : null;
+  // The cluster itself cannot be asked (yet, or by this role): Teleport's agent heartbeat says what can be said.
+  if (a && (!b || ['idle', 'noaccess', 'mfa', 'quiet', 'login'].includes(b.state))) return agentTag(a, b?.detail || '');
   if (!b) return el('span', { class: 'tag hb', title: 'Asking the cluster whether it answers…', text: '♥ …' });
   const when = `checked ${ago(Date.now() - b.at)} ago`;
   if (b.state === 'ok') {
-    return el('span', { class: 'tag hb', title: `Answering — /readyz in ${secs(b.ms)}, ${when}${b.detail && b.detail !== 'ok' ? `\n${b.detail}` : ''}`, text: `♥ ${secs(b.ms)}` });
+    const okAt = b.okAt || b.at;
+    return el('span', { class: 'tag hb', title: `Answering — /readyz in ${secs(b.ms)}, at ${beatClock(okAt)} (${when})${b.detail && b.detail !== 'ok' ? `\n${b.detail}` : ''}${a ? `\n${agentLine(a)}` : ''}`, text: `♥ ${beatText(okAt)}` });
   }
   if (b.state === 'idle' || b.state === 'mfa' || b.state === 'quiet') {
     return el('span', { class: 'tag hb', title: b.detail, text: '· not checked' });
   }
-  if (b.state === 'noaccess') return el('span', { class: 'tag hb', title: b.detail, text: '· no access' });
+  // Teleport answered for it and lists it — its agent is heartbeating — but this role may not ask the cluster itself.
+  if (b.state === 'noaccess') {
+    return el('span', { class: 'tag hb', title: `${b.detail}\nTeleport lists it, so its agent is heartbeating; the cluster itself cannot be asked with this role. ${when}.`, text: '♥ listed · no access' });
+  }
   if (b.state === 'login') return el('span', { class: 'tag stale', title: `${b.detail}\n${when}`, text: '⚠ log in' });
-  const since = b.failingSince ? ago(Date.now() - b.failingSince) : '';
-  const last = b.okAt ? `\nLast answered ${ago(Date.now() - b.okAt)} ago.` : '';
+  const since = b.failingSince ? beatText(b.failingSince) : '';
+  const last = (b.okAt ? `\nLast answered ${ago(Date.now() - b.okAt)} ago, at ${beatClock(b.okAt)}.` : '') + (a ? `\n${agentLine(a)}${a.ageMs !== null && a.ageMs <= quietMs() ? ' — the agent is fine; the API server is what is not answering.' : ''}` : '');
   return el('span', { class: 'tag stale', title: `${b.detail}\n${when}${last}`, text: `⚠ ${since}` });
+}
+
+/**
+ * For sorting by heartbeat: when a row was last heard from (ms) and whether
+ * that counts as quiet — the cluster's own answer, else its agent's.
+ */
+export function beatTimeFor(key, { proxy = null, name = null } = {}) {
+  const b = key ? beats.get(key) : null;
+  const a = proxy && name ? kubeAgentInfo(proxy, name) : null;
+  if (b?.state === 'ok') return { at: b.okAt || b.at, quiet: false };
+  if (b && !['idle', 'noaccess', 'mfa', 'quiet', 'login'].includes(b.state)) return { at: b.okAt || a?.at || null, quiet: true };
+  if (a?.at) return { at: a.at, quiet: a.readAgeMs !== null && a.readAgeMs > quietMs() };
+  return { at: null, quiet: false };
 }
 
 /** What the loop knows of one context — for tests and the tooltip elsewhere. */

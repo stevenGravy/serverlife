@@ -2147,7 +2147,7 @@ function profileFiles({ proxy, home } = {}) {
 }
 
 module.exports = {
-  markCurrentProfile, expandHome,
+  markCurrentProfile, expandHome, tctlRun,
   findTsh, version, compatibility, parseVersionWarning, versionInfo, compatFor,
   status, statusText, listNodes, listClusters, isLeafCluster, writeClusterSshConfig,
   removeProfile, profileFiles,

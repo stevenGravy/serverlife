@@ -2569,6 +2569,8 @@ function registerIpc() {
   handle('kube:heartbeat', async (opts) => (quietRemote()
     ? { ok: false, state: 'quiet', detail: 'Background commands on servers are off in Settings.' }
     : kuberesources.heartbeat(opts?.spec || {})));
+  // Teleport's own heartbeats for its Kubernetes agents (tctl get kube_servers, with your login).
+  handle('kube:agents', async (opts) => (quietRemote() ? { ok: false, state: 'quiet' } : kuberesources.kubeAgents(opts || {})));
   handle('kube:heartbeatTeleport', async (opts) => (quietRemote()
     ? { ok: false, state: 'quiet', detail: 'Background commands on servers are off in Settings.' }
     : kuberesources.heartbeatTeleport(opts || {})));

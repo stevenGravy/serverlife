@@ -194,6 +194,7 @@ contextBridge.exposeInMainWorld('api', {
     detectProvider: (opts) => call('kube:detectProvider', opts),
     heartbeat: (opts) => call('kube:heartbeat', opts),
     heartbeatTeleport: (opts) => call('kube:heartbeatTeleport', opts),
+    agents: (opts) => call('kube:agents', opts),
     openCloudConsole: (opts) => call('kube:openCloudConsole', opts),
     // Contexts from the default kubeconfig location plus any extra files
     // added in Settings. { extraPaths: [...] } -> { ok, contexts, paths }.

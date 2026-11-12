@@ -1458,6 +1458,10 @@ async function openSettings() {
    * A number rather than a toggle because "too long" depends on the screen
    * and on how many clusters are open at once.
    */
+  const heartbeatStyleSel = select([
+    { value: 'relative', label: 'How long ago — <1m, 2m (default)' },
+    { value: 'exact', label: 'The exact time — 14:32:05' },
+  ], state.settings.heartbeatStyle === 'exact' ? 'exact' : 'relative');
   const hostLimitSel = select([
     { value: '0', label: 'No limit — list every host' },
     { value: '10', label: 'Stop at 10 per group' },
@@ -1547,6 +1551,8 @@ async function openSettings() {
           'Past this many the list stops and says how many it is holding back — and that row '
           + 'opens the same hosts in a pane, which has the room for them. A filter is exempt: '
           + 'you asked a specific question, so you get the whole answer.'),
+        field('Heartbeat times', heartbeatStyleSel,
+          'How a heartbeat reads on a row, SSH and Kubernetes alike — how long ago, or the clock time it was heard. The tooltip always has the exact time.'),
         field('Warn about nodes that have gone quiet', staleSel,
           'A node stays in the inventory for ten or fifteen minutes after its agent stops '
           + 'heartbeating, offering to connect the whole time. Past this much silence its row '
@@ -1647,6 +1653,7 @@ async function openSettings() {
           nodeRefreshSeconds: parseInt(nodeRefreshSel.value, 10),
           staleNodeMinutes: parseInt(staleSel.value, 10),
           sidebarHostLimit: parseInt(hostLimitSel.value, 10),
+          heartbeatStyle: heartbeatStyleSel.value,
           fontSize: parseInt(fontSize.value, 10) || 13,
           sidebarFontSize: Math.max(10, Math.min(22, parseInt(sidebarSize.value, 10) || 13)),
           fontFamily: fontValue(),
@@ -1705,7 +1712,8 @@ async function openSettings() {
   // here would touch: the node lists themselves are unchanged.
   const staleChanged = (state.settings.staleNodeMinutes ?? 2) !== res.staleNodeMinutes
     || (state.settings.showWatchMark !== false) !== res.showWatchMark
-    || (state.settings.showServerIcon !== false) !== res.showServerIcon;
+    || (state.settings.showServerIcon !== false) !== res.showServerIcon
+    || (state.settings.heartbeatStyle || 'relative') !== res.heartbeatStyle;
   state.settings = await window.api.settings.set(res);
   if (staleChanged) state.emit('inventory');
   applyTheme();

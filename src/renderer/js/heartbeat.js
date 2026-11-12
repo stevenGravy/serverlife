@@ -153,12 +153,35 @@ export function quietFilter() {
  * the mode is on. The tooltip carries the exact figure, which is where the
  * question "did it just check in?" is actually answered.
  */
-export function ageLabel(node) {
-  const age = heartbeatAge(node);
-  if (age === null) return '';
-  const mins = Math.floor(age / 60000);
+/*
+ * How a heartbeat's time reads on a row — SSH and Kubernetes alike.
+ * Settings → Heartbeat times: "relative" (the default: <1m, 2m, 1h 5m) or
+ * "exact" (the clock time it was heard, 14:32:05). The tooltip always gives
+ * the exact time. `at` is when the heartbeat happened, in ms.
+ */
+export const exactHeartbeats = () => state.settings?.heartbeatStyle === 'exact';
+export function beatClock(at) {
+  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+export function beatText(at, now = Date.now()) {
+  if (exactHeartbeats()) return beatClock(at);
+  const mins = Math.floor(Math.max(0, now - at) / 60000);
   if (mins < 1) return '<1m';
   return mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+/** When a node's last heartbeat happened (ms), or null — its age is as of the moment its list was read. */
+export function heartbeatAt(node) {
+  const age = heartbeatAge(node);
+  if (age === null) return null;
+  return (seenAt.get(keyFor(node)) || Date.now()) - age;
+}
+
+export function ageLabel(node) {
+  const at = heartbeatAt(node);
+  if (at === null) return '';
+  // Relative to the read, as the age always has been.
+  return beatText(at, seenAt.get(keyFor(node)) || Date.now());
 }
 
 /** Is this node overdue, by the user's own definition of overdue? */
@@ -171,9 +194,11 @@ export function isStale(node) {
 
 /** "7m", "1h 4m" — the age as a badge, or '' for a node that is not stale. */
 export function staleLabel(node) {
-  const age = isStale(node) ? heartbeatAge(node) : null;
-  if (age === null) return '';
-  const mins = Math.floor(age / 60000);
+  if (!isStale(node)) return '';
+  const at = heartbeatAt(node);
+  if (at === null) return '';
+  if (exactHeartbeats()) return beatClock(at);
+  const mins = Math.floor((heartbeatAge(node) || 0) / 60000);
   return mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
@@ -186,7 +211,7 @@ export function heartbeatLine(node) {
   const age = heartbeatAge(node);
   if (age === null) return '';
   const mins = Math.floor(age / 60000);
-  const when = mins < 1 ? `${Math.floor(age / 1000)}s ago` : staleAgeText(mins);
+  const when = (mins < 1 ? `${Math.floor(age / 1000)}s ago` : staleAgeText(mins)) + `, at ${beatClock(heartbeatAt(node))}`;
   if (!isStale(node)) return `last heartbeat: ${when}`;
   const ttl = ttls.get(keyFor(node)) || 0;
   const left = Math.max(0, Math.round((node.expires - (seenAt.get(keyFor(node)) || Date.now())) / 60000));

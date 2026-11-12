@@ -148,11 +148,7 @@ export function initSidebar() {
   });
 
   $$('.sb-kind-tab').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      hostKindFilter = btn.dataset.kind;
-      $$('.sb-kind-tab').forEach((b) => b.classList.toggle('active', b === btn));
-      renderSidebar();
-    });
+    btn.addEventListener('click', () => setHostKind(btn.dataset.kind));
   });
 
   state.on('kubeContexts', () => { if (activeSbTab === 'hosts') renderSidebar(); });
@@ -426,6 +422,18 @@ export function renderSidebar() {
 }
 
 /** Which kind of resource the Resources tab is currently filtered to. */
+/**
+ * All / SSH / K8s — one choice for the sidebar and every Hosts pane, set
+ * from either: a pane showing something other than the list beside it read
+ * as the filter not working.
+ */
+export function setHostKind(kind) {
+  hostKindFilter = ['all', 'ssh', 'kube'].includes(kind) ? kind : 'all';
+  $$('#sidebar .sb-kind-tab').forEach((b) => b.classList.toggle('active', b.dataset.kind === hostKindFilter));
+  renderSidebar();
+  import('./hostspane.js').then((m) => m.refreshHostsPanes?.()).catch(() => {});
+}
+
 export function hostKindShown() {
   return state.settings.kubeEnabled === false ? 'ssh' : hostKindFilter;
 }
@@ -2417,9 +2425,11 @@ function openGroupMenu(x, y, key, title, profile) {
      * not a bigger sidebar: it is the inventory in the space a terminal
      * would have had, splittable and closable like any other pane.
      */
+    // A click opens it in a new tab; the arrow has beside and below.
     folderKey ? {
       label: 'Open this list in a pane', icon: '\u25A6',
-      title: 'The hosts of this group, with room: folders on or off, rows or tiles',
+      title: 'The hosts of this group, with room: folders on or off, rows, tiles or a table — click for a new tab, the arrow for beside or below',
+      onClick: () => openHostsPaneFor(folderKey),
       submenu: [
         { label: 'In a new tab', onClick: () => openHostsPaneFor(folderKey) },
         { label: 'Beside this pane', onClick: () => openHostsPaneFor(folderKey, 'row') },
@@ -3262,7 +3272,7 @@ function kubeRequestableRow(host, groupKey, opts = {}, watched = false) {
     watched ? el('span', { class: 'hwatch', text: '\u{1F514}', title: 'Watched — you will be told if this cluster leaves the inventory' }) : null,
     el('span', { class: 'name', text: host.name }),
     ...kubeMarks(host),
-    listedBeatTag(),
+    listedBeatTag(host.profile?.proxy || host.proxy, host.name),
     labelSummary(host) ? el('span', { class: 'tag', text: labelSummary(host) }) : null,
     el('span', { class: 'tag req', text: 'req' }));
   row.addEventListener('dblclick', () => requestKubeAccessFor(host));

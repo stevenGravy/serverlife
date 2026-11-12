@@ -37,18 +37,26 @@ try {
     await app.waitFor(`[...document.querySelectorAll('#sb-panel-hosts .sb-item .tag.hb, #sb-panel-hosts .sb-item .tag.stale')].some((x) => /♥ \\d|not checked|⚠/.test(x.textContent))`, 'a heartbeat', 90000).catch(() => {});
     await sleep(70000);
     const seen = (await tags()).filter((x) => x.beat);
+    for (const x of seen) x.title = x.title || '';
     console.log(`  heartbeats: ${JSON.stringify(seen.map((x) => `${x.name}: ${x.beat}`))}`);
     const s = await app.send('Page.captureScreenshot', { format: 'png' });
     writeFileSync(path.join(os.tmpdir(), 'serverlife-kube-heartbeats.png'), Buffer.from(s.data, 'base64'));
     t.check('Heartbeats on: Kubernetes rows get a heartbeat', () => assert.ok(seen.length > 0));
-    t.check('a cluster that answers shows ♥ and how fast', () => assert.ok(seen.some((x) => /♥ \d/.test(x.beat)), 'none answered'));
+    t.check('a cluster that answers shows ♥ and how long ago, as SSH does (the speed is in the tooltip)', () => {
+      const ok = seen.find((x) => /^♥ (<1m|\d+m)$/.test(x.beat) && /readyz/.test(x.title));
+      assert.ok(ok, 'none answered');
+    });
+    // Teleport's own agent heartbeat (tctl), for a cluster that cannot be asked itself.
+    const viaAgent = seen.filter((x) => /Teleport agent/.test(x.title));
+    console.log(`  agent heartbeats: ${JSON.stringify(viaAgent.map((x) => `${x.name}: ${x.beat}`))}`);
+    if (viaAgent.length) t.check('a cluster that cannot be asked shows its agent heartbeat from Teleport', () => assert.ok(viaAgent.some((x) => /^(♥ (<1m|\d+m)|⚠ agent \d+m)$/.test(x.beat))));
     const idle = seen.filter((x) => /not checked/.test(x.beat));
     if (idle.length) t.check('one without a good Teleport certificate is "not checked", and says why', () => assert.match(idle[0].title, /certificate/));
     // Rows not logged in to (dimmed, "not connected") are asked through the app's own kubeconfig.
     const notConnected = await app.evaluate(`[...document.querySelectorAll('#sb-panel-hosts .sb-item')].filter((r) => r.querySelector('.kube-ico') && /not connected/.test(r.textContent))
       .map((r) => ({ name: r.querySelector('.name')?.textContent, beat: r.querySelector('.tag.hb, .tag.stale')?.textContent || '' }))`);
     console.log(`  not logged in: ${JSON.stringify(notConnected.slice(0, 6))} (${notConnected.length})`);
-    if (notConnected.length) t.check('a cluster not logged in to gets a heartbeat too', () => assert.ok(notConnected.some((x) => /♥ \d/.test(x.beat)), 'none answered'));
+    if (notConnected.length) t.check('a cluster not logged in to gets a heartbeat too', () => assert.ok(notConnected.some((x) => /♥ (<1m|\d+m)/.test(x.beat)), 'none answered'));
     const logins = await app.evaluate(`[...document.querySelectorAll('.tab')].map((t) => t.textContent).filter((x) => /login/i.test(x))`);
     t.check('no tsh login was started by the checks', () => assert.deepEqual(logins, []));
   }

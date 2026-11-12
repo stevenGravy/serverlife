@@ -122,7 +122,8 @@ test('the labels read as minutes, and under a minute says so', () => {
 test('the tooltip says how long is left before the cluster forgets it', () => {
   const nodes = listFor('c-tip', [['fresh', 5000], ['nine', 9 * MIN]]);
   H.observe('c-tip', nodes);
-  assert.match(H.heartbeatLine(nodes[0]), /^last heartbeat: \d+s ago$/);
+  // How long ago, and the exact time it was heard.
+  assert.match(H.heartbeatLine(nodes[0]), /^last heartbeat: \d+s ago, at \d{1,2}:\d{2}:\d{2}/);
   const line = H.heartbeatLine(nodes[1]);
   assert.match(line, /9 minutes ago/);
   assert.match(line, /may be gone/);
@@ -156,5 +157,15 @@ test('the quiet filter and the heartbeat toggle read their settings', () => {
   assert.equal(H.showHeartbeats(), true);
   state.settings = { ...store, quietNodeFilter: 'nonsense' };
   assert.equal(H.quietFilter(), 'all', 'an unknown value falls back to showing everything');
+  state.settings = store;
+});
+
+test('heartbeat times: how long ago by default, the clock time with the exact style', () => {
+  const nodes = listFor('c-style', [['fresh', 5000], ['four', 4 * MIN]]);
+  H.observe('c-style', nodes);
+  state.settings = { ...store };
+  assert.deepEqual(nodes.map(H.ageLabel), ['<1m', '4m']);
+  state.settings = { ...store, heartbeatStyle: 'exact' };
+  for (const label of nodes.map(H.ageLabel)) assert.match(label, /^\d{1,2}:\d{2}:\d{2}/);
   state.settings = store;
 });

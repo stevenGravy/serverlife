@@ -9,7 +9,7 @@ import {
 } from './folders.js';
 import { missingIn, missingLine, goneFor, isWatched, showWatchMark } from './watch.js';
 import { clusterIcon } from './clustermarks.js';
-import { isStale, staleLabel, ageLabel, heartbeatAge, heartbeatLine } from './heartbeat.js';
+import { isStale, staleLabel, ageLabel, heartbeatAge, heartbeatLine, heartbeatAt } from './heartbeat.js';
 import { profileMeta } from './profiles.js';
 
 /**
@@ -336,6 +336,17 @@ async function setPref(patch) {
 /* ------------------------------------------------------------------ */
 
 function sortPref() { return state.settings.hostsPaneSort || { mode: 'name' }; }
+
+/* All / SSH / K8s: the sidebar's filter, shared — set from the pane's pills or the sidebar's (sidebar.setHostKind). */
+function paneKind(sidebar) {
+  if (state.settings.kubeEnabled === false) return 'ssh';
+  return sidebar?.hostKindShown?.() || 'all';
+}
+function inPaneKind(h, kind) {
+  if (kind === 'all') return true;
+  const isKube = h.kind === 'kube' || h.kind === 'kube_cluster' || /^kube:/.test(h.id || '') || /\/kube_cluster\//.test(h.resourceId || '');
+  return kind === 'kube' ? isKube : !isKube;
+}
 function nameOf(h) { return h.name || h.alias || ''; }
 
 /** Lower sorts first: connected, then the normal ones, then stale, gone, requestable. */
@@ -366,7 +377,24 @@ function labelKeysIn(hosts) {
  */
 function sortHosts(hosts, pref = sortPref()) {
   const list = [...hosts];
-  if (pref.mode === 'status') {
+  if (pref.mode === 'heartbeat') {
+    /*
+     * The longest quiet first — the order for finding what has stopped:
+     * a quiet one ahead of every answering one, then by how long ago each
+     * was last heard, SSH and Kubernetes alike. Nothing to go on, last.
+     */
+    const beat = (h) => (h.kind === 'kube'
+      ? (lastKubepanel ? lastKubepanel.kubeBeatTimeFor(h) : { at: null, quiet: false })
+      : { at: heartbeatAt(h), quiet: isStale(h) });
+    const info = new Map(list.map((h) => [h, beat(h)]));
+    list.sort((a, b) => {
+      const x = info.get(a);
+      const y = info.get(b);
+      if (x.quiet !== y.quiet) return x.quiet ? -1 : 1;
+      if ((x.at === null) !== (y.at === null)) return x.at === null ? 1 : -1;
+      return (x.at || 0) - (y.at || 0) || nameOf(a).localeCompare(nameOf(b));
+    });
+  } else if (pref.mode === 'status') {
     list.sort((a, b) => statusRankOf(a) - statusRankOf(b) || nameOf(a).localeCompare(nameOf(b)));
   } else if (pref.mode === 'label' && pref.labelKey) {
     const valueOf = (h) => (labelEntries(h).find(([k]) => k === pref.labelKey) || [])[1];
@@ -381,6 +409,8 @@ function sortHosts(hosts, pref = sortPref()) {
   } else {
     list.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
   }
+  // Turned round from the table's header (a second click on the column it is sorted by).
+  if (pref.desc) list.reverse();
   return list;
 }
 
@@ -404,7 +434,8 @@ function render(pane) {
     // Watched hosts that have left the inventory are drawn here too: this
     // pane is the fleet view, and "what is missing" is a fleet question.
     const isProfiles = view.groupKey === 'profiles';
-    const all = isProfiles ? here.hosts : [...here.hosts, ...missingIn(view.groupKey, here.hosts)];
+    const kind = paneKind(sidebar);
+    const all = (isProfiles ? here.hosts : [...here.hosts, ...missingIn(view.groupKey, here.hosts)]).filter((h) => inPaneKind(h, kind));
     const q = view.filter.trim() ? compileQuery(view.filter) : null;
     const hosts = q ? all.filter(q.match) : all;
 
@@ -508,7 +539,7 @@ function toolbar(pane, view, groups, all, shown, here = {}, sidebar) {
       // the full render does, cache and all.
       import('./sidebar.js').then((sidebar) => {
         const src = hostsFor(view, groups, sidebar, () => render(pane));
-        const list = [...src.hosts, ...missingIn(view.groupKey, src.hosts)];
+        const list = [...src.hosts, ...missingIn(view.groupKey, src.hosts)].filter((h) => inPaneKind(h, paneKind(sidebar)));
         clear(body);
         body.append(...content(pane, view, q ? list.filter(q.match) : list, isProfiles));
         const n = pane.hostsHost.querySelector('.hp-count');
@@ -531,12 +562,13 @@ function toolbar(pane, view, groups, all, shown, here = {}, sidebar) {
   const sortOptions = [
     { value: 'name', label: 'Sort: Name' },
     { value: 'status', label: 'Sort: Status' },
+    { value: 'heartbeat', label: 'Sort: Heartbeat (quietest first)' },
     ...labelKeysIn(all).map((k) => ({ value: 'label:' + k, label: `Sort: ${k}` })),
   ];
   const curSort = sortPref();
   const curSortValue = curSort.mode === 'label' && curSort.labelKey ? 'label:' + curSort.labelKey : curSort.mode;
   const sortSel = select(sortOptions, sortOptions.some((o) => o.value === curSortValue) ? curSortValue : 'name');
-  sortSel.title = 'Order hosts by name, status, or a label’s value — '
+  sortSel.title = 'Order hosts by name, status, heartbeat (the longest quiet first), or a label’s value — '
     + 'picking a label clusters the same value together, e.g. every env=prod row';
   sortSel.addEventListener('change', () => {
     const v = sortSel.value;
@@ -583,6 +615,12 @@ function toolbar(pane, view, groups, all, shown, here = {}, sidebar) {
         ? 'Labels most of these hosts share are their own columns — click for one combined Labels column'
         : 'Break out the labels most of these hosts share into their own sortable columns',
       () => setPref({ hostsPaneLabelColumns: !labelColumnsOn() }))] : []),
+    ...(isProfiles || state.settings.kubeEnabled === false ? [] : [el('span', { class: 'hp-kinds', style: 'display:inline-flex;gap:4px' },
+      ...[['all', 'All'], ['ssh', 'SSH'], ['kube', 'K8s']].map(([k, label]) => el('button', {
+        class: 'sb-kind-tab' + (paneKind(sidebar) === k ? ' active' : ''), dataset: { kind: k }, text: label,
+        title: k === 'all' ? 'SSH hosts and Kubernetes clusters' : k === 'ssh' ? 'SSH hosts only' : 'Kubernetes clusters only',
+        onClick: () => sidebar?.setHostKind?.(k),
+      })))]),
     ...(isProfiles ? [] : [sortSel]),
     find,
     el('span', {
@@ -898,6 +936,8 @@ function kubeCard(pane, view, host, folder, k) {
         : host.availableCluster
         ? el('span', { class: 'tag', title: 'Offered by this cluster, not logged in yet — double-click to log in', text: 'available' })
         : null,
+      // Its heartbeat, as on its sidebar row (kubeheartbeat.js) — with Heartbeats on.
+      lastKubepanel ? lastKubepanel.kubeBeatFor(host) : null,
       el('span', { style: 'flex:1' })),
     tags.length
       ? el('div', { class: 'hp-tags' }, ...tags.map(([tk, tv]) => el('span', { class: 'chip sm' },
@@ -1019,21 +1059,24 @@ function card(pane, view, host, folder) {
 function table(pane, view, hosts, depth = 0, folder = null) {
   const wrap = el('div', { class: 'hp-table', style: depth ? `--depth:${depth}` : null });
   const cols = labelColumnsOn() ? (view.labelColumns || []) : [];
-  const gridTemplate = 'minmax(140px, 1.6fr) 110px minmax(100px, 1fr)'
+  const gridTemplate = 'minmax(140px, 1.6fr) 110px 104px minmax(100px, 1fr)'
     + ' minmax(90px, 1fr)'.repeat(cols.length) + ' minmax(140px, 2fr)';
   // `pref` is what a click sets as the sort preference — null for a column
   // that is not sortable (Address, the leftover Labels column).
+  // A second click on the column it is sorted by turns the order round (▲ / ▼).
   const col = (label, pref) => {
-    const active = !!pref && sortPref().mode === pref.mode
-      && (pref.mode !== 'label' || sortPref().labelKey === pref.labelKey);
+    const cur = sortPref();
+    const active = !!pref && cur.mode === pref.mode
+      && (pref.mode !== 'label' || cur.labelKey === pref.labelKey);
     return el('div', {
       class: 'hp-th' + (active ? ' active' : ''),
-      text: label,
-      onClick: pref ? (() => setPref({ hostsPaneSort: pref })) : null,
+      text: label + (active ? (cur.desc ? ' ▼' : ' ▲') : ''),
+      title: pref ? (active ? 'Click to reverse the order' : `Sort by ${label.toLowerCase()}`) : null,
+      onClick: pref ? (() => setPref({ hostsPaneSort: active ? { ...pref, desc: !cur.desc } : pref })) : null,
     });
   };
   wrap.append(el('div', { class: 'hp-tr head', style: `grid-template-columns:${gridTemplate}` },
-    col('Name', { mode: 'name' }), col('Status', { mode: 'status' }), col('Address', null),
+    col('Name', { mode: 'name' }), col('Status', { mode: 'status' }), col('Heartbeat', { mode: 'heartbeat' }), col('Address', null),
     ...cols.map((ck) => col(ck, { mode: 'label', labelKey: ck })),
     col('Labels', null)));
   for (const h of hosts) wrap.append(tableRow(pane, view, h, folder, cols, gridTemplate));
@@ -1056,6 +1099,7 @@ function kubeTableRow(pane, view, host, folder, k, gridTemplate) {
     el('div', { class: 'hp-td status' },
       host.requestable ? el('span', { class: 'tag req', text: 'req' })
         : host.availableCluster ? el('span', { class: 'tag', text: 'available' }) : null),
+    el('div', { class: 'hp-td beat' }, lastKubepanel ? lastKubepanel.kubeBeatFor(host) : null),
     el('div', { class: 'hp-td addr' }),
     el('div', { class: 'hp-td labels' },
       ...tags.map(([tk, tv]) => el('span', { class: 'chip sm' },
@@ -1094,9 +1138,13 @@ function tableRow(pane, view, host, folder, cols = [], gridTemplate = null) {
         ? el('span', { class: 'tag req', text: 'req' })
         : host.missing
         ? el('span', { class: 'tag gone', title: missingLine(host), text: '⊘ gone ' + goneFor(host.missingSince) })
+        : null),
+    // Its own column, so the table can be sorted by it.
+    el('div', { class: 'hp-td beat' },
+      host.missing || host.requestable ? null
         : isStale(host)
-        ? el('span', { class: 'tag stale', text: '⚠ ' + staleLabel(host) })
-        : (heartbeatAge(host) !== null ? el('span', { class: 'tag hb', text: '♥ ' + ageLabel(host) }) : null)),
+        ? el('span', { class: 'tag stale', title: heartbeatLine(host), text: '⚠ ' + staleLabel(host) })
+        : (heartbeatAge(host) !== null ? el('span', { class: 'tag hb', title: heartbeatLine(host), text: '♥ ' + ageLabel(host) }) : null)),
     el('div', { class: 'hp-td addr', text: host.addr || (host.tunnel ? 'tunnel' : (host.user || '')) }),
     ...cols.map((ck) => {
       const found = tags.find(([tk]) => tk === ck);
