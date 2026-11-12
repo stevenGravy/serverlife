@@ -1,3 +1,4 @@
+import { listedBeatTag } from './kubeheartbeat.js';
 import { cloudMenuItem } from './kubecloud.js';
 import { serverIcon } from './hosticons.js';
 import {
@@ -1522,10 +1523,19 @@ function groupRows(groupKey, hosts, labelFor) {
   const capped = [];
   let hidden = 0;
   for (const r of rows) {
-    const isHost = r.classList?.contains('sb-item');
+    /*
+     * A Kubernetes cluster counts as one host however it is drawn: a plain
+     * row, or a logged-in context's tree (kube-ctx-tree, its namespaces
+     * inside) or a row with its tag strip, both wrappers round an .sb-item.
+     * Counting only bare rows let a cluster with twenty logged-in contexts
+     * run past the cap SSH hosts stop at.
+     */
+    const head = r.classList?.contains('sb-item') ? r
+      : (r.classList?.contains('kube-ctx-tree') || r.firstElementChild?.classList?.contains('sb-item')) ? r.querySelector?.('.sb-item') : null;
+    const isHost = !!head;
     // A host that has disappeared is never what the cap should hide: it is
     // there because somebody asked to be told about it.
-    if (!isHost || r.classList.contains('missing')) { capped.push(r); continue; }
+    if (!isHost || head.classList.contains('missing')) { capped.push(r); continue; }
     if (shown < limit) { capped.push(r); shown += 1; } else hidden += 1;
   }
   if (hidden) capped.push(moreRow(groupKey, hidden));
@@ -3252,6 +3262,7 @@ function kubeRequestableRow(host, groupKey, opts = {}, watched = false) {
     watched ? el('span', { class: 'hwatch', text: '\u{1F514}', title: 'Watched — you will be told if this cluster leaves the inventory' }) : null,
     el('span', { class: 'name', text: host.name }),
     ...kubeMarks(host),
+    listedBeatTag(),
     labelSummary(host) ? el('span', { class: 'tag', text: labelSummary(host) }) : null,
     el('span', { class: 'tag req', text: 'req' }));
   row.addEventListener('dblclick', () => requestKubeAccessFor(host));

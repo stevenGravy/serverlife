@@ -8,6 +8,7 @@ import { groupKeyFor } from './folders.js';
 import { isWatched, toggleWatch } from './watch.js';
 import { askNamespace, extraNamespaces } from './kubenamespaces.js';
 import { providerFor, providerBadge, cloudMenuItem, detectOnConnect } from './kubecloud.js';
+import { startKubeHeartbeats, kubeBeatTag, contextBeatKey, teleportBeatKey } from './kubeheartbeat.js';
 
 // Dynamic, not static: sidebar.js already imports this module, and a static
 // import back would close the cycle — the same workaround sessions.js and
@@ -58,6 +59,17 @@ let lastError = '';
 
 /** Kicks off a read on first use; later calls just redraw from what's cached. */
 function ensureLoaded() {
+  // Heartbeats — idle unless Heartbeats is on (kubeheartbeat.js): the contexts read
+  // here, and the clusters a valid Teleport login offers that are not logged in to yet.
+  startKubeHeartbeats(() => [
+    ...contexts.map((c) => ({ key: contextBeatKey(c), spec: kubeSpecOf(c) })),
+    ...(state.teleportProfiles || [])
+      .filter((p) => !p.expired && p.validUntil && Date.parse(p.validUntil) > Date.now() + 120000)
+      .flatMap((p) => notYetConnected(p).map((cl) => ({
+        key: teleportBeatKey(p.proxy, p.homeDir, cl.name),
+        teleport: { proxy: p.proxy, kubeCluster: cl.name, home: p.homeDir || null },
+      }))),
+  ]);
   if (loaded || loading) return;
   loading = true;
   window.api.kube.contexts({ extraPaths: state.settings.kubeconfigPaths || [] })
@@ -461,6 +473,7 @@ export function availableClusterRow(p, cluster, opts = {}) {
     opts.watched ? el('span', { class: 'hwatch', text: '\u{1F514}', title: 'Watched — you will be told if this cluster leaves the inventory' }) : null,
     el('span', { class: 'name', text: cluster.name }),
     ...kubeMarks(cluster),
+    kubeBeatTag(teleportBeatKey(p.proxy, p.homeDir, cluster.name)),
     labelTag(cluster.labels),
     el('span', { class: 'tag', text: busy ? 'logging in…' : 'not connected' }));
 }
@@ -556,6 +569,12 @@ export async function connectAvailableCluster(p, cluster) {
 }
 
 /** Rows for the flat "Local kubeconfigs" group — contexts with no Teleport cluster behind them. */
+let localShowAll = false;
+const sidebarLimit = () => {
+  const v = state.settings.sidebarHostLimit;
+  return Math.max(0, v === undefined || v === null ? 20 : Number(v) || 0);
+};
+
 export function kubeGroupRows() {
   if (state.settings.kubeEnabled === false) return [];
   ensureLoaded();
@@ -569,7 +588,16 @@ export function kubeGroupRows() {
   } else if (!direct.length) {
     rows.push(el('div', { class: 'sb-empty', style: 'padding-left:20px', text: 'No other contexts in the default kubeconfig.' }));
   } else {
-    for (const c of direct) rows.push(kubeContextRow(c));
+    // The same cap as every other group (Settings → Hosts listed per group); the rest one click away.
+    const cap = localShowAll ? 0 : sidebarLimit();
+    const list = cap ? direct.slice(0, cap) : direct;
+    for (const c of list) rows.push(...[kubeContextRow(c)].flat());
+    if (cap && direct.length > cap) {
+      rows.push(el('div', {
+        class: 'sb-more', title: `This list stops at ${cap} contexts — raise the limit in Settings, or show them all here.`,
+        onClick: (e) => { e.stopPropagation(); localShowAll = true; state.emit('kubeContexts'); },
+      }, el('span', { class: 'dots', text: '…' }), el('span', { class: 'name', text: `${direct.length - cap} more` }), el('span', { class: 'go', text: 'show all' })));
+    }
   }
   rows.push(el('div', {
     class: 'sb-item beam-add',
@@ -683,6 +711,7 @@ export function kubeContextRow(c, opts = {}) {
     opts.watched ? el('span', { class: 'hwatch', text: '\u{1F514}', title: 'Watched — you will be told if this cluster leaves the inventory' }) : null,
     el('span', { class: 'name', text: c.kubeClusterName || c.name }),
     ...kubeMarks(c),
+    kubeBeatTag(contextBeatKey(c)),
     c.current ? el('span', { class: 'tag', text: 'current' }) : null,
     // Visible even collapsed — "is anything of mine still forwarding here"
     // should not require expanding the cluster to find out.

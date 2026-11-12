@@ -64,6 +64,18 @@ export function modal({ title, subtitle, render, buttons, width, onOpen, resize 
   return new Promise((resolve) => {
     const backdrop = el('div', { class: 'modal-backdrop' });
     const body = el('div', { class: 'modal-body' });
+    /*
+     * A dialog builds its body from pieces some of which are only there
+     * sometimes (`cond ? row : null`). The DOM's own append prints a null as
+     * the word "null" — it did, under Quick connect with nothing recent, and
+     * under the phase builder's problems — so the body's append and
+     * replaceChildren leave empty pieces out.
+     */
+    const kept = (nodes) => nodes.filter((n) => n !== null && n !== undefined && n !== false);
+    const nativeAppend = body.append.bind(body);
+    const nativeReplace = body.replaceChildren.bind(body);
+    body.append = (...nodes) => nativeAppend(...kept(nodes));
+    body.replaceChildren = (...nodes) => nativeReplace(...kept(nodes));
     const foot = el('div', { class: 'modal-foot' });
     const box = el('div', { class: 'modal' },
       el('div', { class: 'modal-head' },

@@ -11,6 +11,34 @@ tagged `v<version>`.
 
 ---
 
+## [0.36.0] — 2026-11-12
+
+Heartbeats for Kubernetes clusters — whether each one's API server is
+answering, and how fast, for clusters logged in to and ones not yet — that
+never make tsh log in again or ask for MFA, and keep two tsh homes apart.
+Kubernetes rows now stop at the same per-group limit as SSH hosts, and a
+stray "null" is gone from Quick connect.
+
+### Added
+
+- **Heartbeats for Kubernetes clusters** — with *Heartbeats* on, each cluster
+  is asked `GET /readyz`: `♥ 0.5s` while it answers, `⚠ 3m` when it stopped,
+  `⚠ log in` or `· no access` when that is why; clusters not logged in to are
+  asked too (through the app's own kubeconfig), and requestable ones say
+  `♥ listed`. A check never makes tsh log in again or ask for MFA, and the same
+  cluster in two tsh homes is kept apart.
+
+### Fixed
+
+- **Kubernetes rows are capped per group like SSH hosts** — logged-in
+  clusters ran past *Hosts listed per group*, and the Local kubeconfigs group
+  was never capped.
+- **A stray "null" in Quick connect** when there were no recent connections —
+  and in any dialog with a part that is only there sometimes: a dialog's body
+  now leaves an absent part out instead of printing it.
+
+---
+
 ## [0.35.0] — 2026-11-11
 
 Kubernetes clusters say which cloud they are on — an EKS, GKE or AKS badge

@@ -142,3 +142,28 @@ test('a cloud set by hand outranks every detected answer, and keeps their detail
   const p = kp.combine(kp.fromCluster({ version: 'v1.35.9-eks-1' }), manual, kp.fromLabels({ cloud: 'azure', 'resource-group': 'rg1' }));
   assert.deepEqual([p.provider, p.how, p.subscription, p.resourceGroup], ['aks', 'manual', 's1', 'rg1']);
 });
+
+/* ---- Kubernetes heartbeats: what kubectl's answer to GET /readyz means ---- */
+const kr = require_(path.join(__PROJECT_ROOT__, 'src/main/kuberesources.js'));
+const beat = (stderr, ok = false, stdout = '') => kr.heartbeatState(ok, stdout, stderr).state;
+
+test('heartbeat: ok, and a 403 is a cluster that answered', () => {
+  assert.equal(beat('', true, 'ok'), 'ok');
+  assert.equal(beat('Error from server (Forbidden): forbidden: User "x" cannot get path "/readyz"'), 'ok');
+});
+
+test('heartbeat: refused credentials, a missing sign-in plugin and MFA are not "down"', () => {
+  assert.equal(beat('error: You must be logged in to the server (Unauthorized)'), 'login');
+  assert.equal(beat('Install gke-gcloud-auth-plugin for use with kubectl by following https://cloud.google.com/x'), 'login');
+  assert.equal(beat('ERROR: access denied: per-session MFA required'), 'mfa');
+});
+
+test('heartbeat: timeouts, an unreachable agent and a not-ready API server are told apart', () => {
+  assert.equal(beat('Unable to connect to the server: dial tcp 10.0.0.1:443: i/o timeout'), 'timeout');
+  assert.equal(beat('ERROR: kubernetes cluster "dev" is not found'), 'agent');
+  assert.equal(beat('Error from server (InternalError): readyz check failed'), 'notready');
+});
+
+test('heartbeat: a role with no Kubernetes access is said as such, not as the cluster failing', () => {
+  assert.equal(beat("NotFound: Your user's Teleport role does not allow Kubernetes access. Please ask cluster administrator to ensure your role has appropriate kubernetes_groups and kubernetes_users set."), 'noaccess');
+});

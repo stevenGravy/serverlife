@@ -573,6 +573,174 @@ async function getRawList(spec = {}, { name, namespaced, namespace } = {}) {
 }
 
 /**
+ * A Kubernetes cluster's heartbeat: does its API server answer, and how
+ * fast. Teleport publishes no heartbeat for a Kubernetes cluster the way it
+ * does for an SSH node (tsh kube ls carries no expiry), so this asks —
+ * `GET /readyz`, which every signed-in user may read — through the same
+ * kubeconfig and Teleport path as everything else. What went wrong is told
+ * apart: the Teleport agent or tunnel gone, the API server not ready, a
+ * timeout, or a login or MFA the check must not wait on.
+ */
+function heartbeatState(ok, stdout, stderr) {
+  const err = String(stderr || '');
+  if (ok) return { state: 'ok', detail: String(stdout || '').trim().slice(0, 80) || 'ok' };
+  // Refused by a server that answered: alive. 403 is this role; 401 is these credentials, which is a login to fix.
+  if (/\b401\b|Unauthorized|must be logged in/i.test(err)) return { state: 'login', detail: 'answering, but it refused these credentials — log in again' };
+  if (/\b403\b|forbidden/i.test(err)) return { state: 'ok', detail: 'answering — /readyz is not open to this role' };
+  // The kubeconfig's credential plugin is not installed: no request was made at all.
+  const plugin = err.match(/executable (\S+) (?:not found|failed)|Install (\S+) for use with kubectl/i);
+  if (plugin && !/tsh/.test(plugin[1] || '')) return { state: 'login', detail: `can't sign in: ${(plugin[1] || plugin[2]).split('/').pop()} is not installed or failed` };
+  if (/mfa|multi-factor|second factor|webauthn|touch id|hardware key/i.test(err)) return { state: 'mfa', detail: 'needs per-session MFA — not checked' };
+  // Teleport answered for it, but this role has no Kubernetes groups or users there: nothing to ask, not a failure.
+  if (/role does not allow Kubernetes access|kubernetes_groups and kubernetes_users/i.test(err)) return { state: 'noaccess', detail: 'Teleport answered, but your role gives no Kubernetes access to it (no kubernetes_groups or kubernetes_users)' };
+  if (/expired|not logged in|tsh login|relogin|credentials.*(expired|invalid)|sso|token has expired/i.test(err)) return { state: 'login', detail: 'its login has lapsed' };
+  if (/timeout|deadline exceeded|timed out|Client\.Timeout/i.test(err)) return { state: 'timeout', detail: 'no answer within 10 s' };
+  if (/tunnel|no.*(agent|kube_server)|kubernetes cluster.*not found|not found.*kubernetes cluster|connection reset|EOF|no such host|connection refused|unreachable/i.test(err)) {
+    return { state: 'agent', detail: 'not reachable — the Teleport agent or the network to the cluster' };
+  }
+  if (/unable to handle the request|readyz check failed|is not ready|InternalError|ServiceUnavailable|503/i.test(err)) return { state: 'notready', detail: 'the API server answered that it is not ready' };
+  return { state: 'error', detail: err.split('\n').find((l) => l.trim())?.slice(0, 200) || 'kubectl failed' };
+}
+
+/**
+ * Whether a context reached through Teleport can be asked without tsh
+ * logging in again. `tsh kube credentials` hands back a cached certificate
+ * when one is still good — no login, no MFA — and otherwise retries by
+ * logging in, which on an SSO cluster opens a browser, and on an MFA one
+ * asks for a touch: never something a background check may set off. So the
+ * cached credential's certificate is read here first (keys/<proxy>/<user>-kube/
+ * <cluster>/<kube cluster>.cred, or the older -x509.pem), and a context
+ * without a good one is not asked at all.
+ */
+async function teleportCredFor(spec = {}) {
+  const fs = require('fs');
+  const path = require('path');
+  const { X509Certificate } = require('crypto');
+  const { bin, baseArgs, env } = kube.kubectlArgsFor({ ...spec, namespace: null });
+  const r = await run(bin, [...baseArgs, 'config', 'view', '-o', 'json', '--minify'], { env, timeout: 10000 });
+  let view;
+  try { view = JSON.parse(r.stdout || '{}'); } catch { return { teleport: false }; }
+  const user = (view.users || [])[0]?.user;
+  const origin = kube.teleportOriginOf(user);
+  if (!origin) return { teleport: false };
+  const host = String(origin.proxy || '').replace(/^https?:\/\//, '').replace(/:\d+$/, '');
+  /*
+   * The one home tsh will use for this context, and only that one: the
+   * TELEPORT_HOME tsh kube login wrote into the exec entry, else the one
+   * kubectl passes down (this process's), else ~/.tsh. Taking the best
+   * certificate across every home would let a good one in home A vouch for
+   * an expired one in home B — and tsh, in B, would log in again.
+   */
+  const homeEnv = (user?.exec?.env || []).find((e) => e.name === 'TELEPORT_HOME')?.value;
+  const home = require('./teleport').expandHome(homeEnv || env.TELEPORT_HOME || process.env.TELEPORT_HOME || '~/.tsh');
+  let best = 0;
+  {
+    const base = path.join(home, 'keys', host);
+    let users = [];
+    try { users = fs.readdirSync(base).filter((n) => n.endsWith('-kube')); } catch { users = []; }
+    for (const u of users) {
+      for (const name of [`${origin.kubeCluster}.cred`, `${origin.kubeCluster}-x509.pem`]) {
+        try {
+          const pem = fs.readFileSync(path.join(base, u, origin.cluster, name), 'utf8');
+          const cert = pem.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/);
+          if (cert) best = Math.max(best, Date.parse(new X509Certificate(cert[0]).validTo) || 0);
+        } catch { /* not this one */ }
+      }
+    }
+  }
+  return { teleport: true, home, validUntil: best || null, good: best > Date.now() + 60000 };
+}
+
+/*
+ * A heartbeat for a cluster you can use but have not logged in to: the
+ * same `tsh kube login` you would run, into a kubeconfig of the app's own
+ * (one per cluster and tsh home — yours is never touched), then GET /readyz
+ * through it. Asked only while the Teleport login is good (the caller says
+ * so; tsh is never run for an expired one), and one login per cluster and
+ * home at a time, so two rounds never race to write the same file.
+ */
+const kubeLogins = new Map();   // private kubeconfig path -> the login in flight
+async function heartbeatTeleport({ proxy, kubeCluster, home } = {}) {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const crypto = require('crypto');
+  const teleport = require('./teleport');
+  if (!proxy || !kubeCluster) return { ok: false, state: 'error', detail: 'Which cluster?', ms: 0, at: Date.now() };
+  const dir = path.join(os.tmpdir(), `serverlife-kube-beat-${process.getuid ? process.getuid() : 'u'}`);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // Named for the home tsh will actually use (unset and ~/.tsh written out are the same home): one file per cluster and home.
+  const tshEnv = teleport.tshEnv(home || null, proxy);
+  const effectiveHome = teleport.expandHome(tshEnv.TELEPORT_HOME || process.env.TELEPORT_HOME || '~/.tsh');
+  const id = crypto.createHash('sha1').update(`${String(proxy).replace(/:443$/, '')}\u0000${kubeCluster}\u0000${effectiveHome}`).digest('hex').slice(0, 16);
+  // Checked here, not only by the caller, and in the home tsh will use: tsh is never run against a login that has lapsed.
+  if (!teleportLoginGood(effectiveHome, proxy)) return { ok: false, state: 'idle', detail: 'not checked — the Teleport login has expired', ms: 0, at: Date.now() };
+  const file = path.join(dir, `${id}.yaml`);
+  const login = () => {
+    if (kubeLogins.has(file)) return kubeLogins.get(file);
+    const p = new Promise((resolve) => {
+      execFile(teleport.findTsh(), [`--proxy=${proxy}`, 'kube', 'login', kubeCluster], {
+        timeout: 45000, env: { ...tshEnv, TELEPORT_HOME: effectiveHome, KUBECONFIG: file },
+      }, (err, stdout, stderr) => resolve({ ok: !err, stderr: plain(String(stderr || '')) }));
+    }).finally(() => kubeLogins.delete(file));
+    kubeLogins.set(file, p);
+    return p;
+  };
+  const contextOf = () => {
+    try { return (fs.readFileSync(file, 'utf8').match(/^current-context:\s*(\S+)/m) || [])[1] || ''; } catch { return ''; }
+  };
+  let fresh = false;
+  if (!contextOf()) {
+    const r = await login();
+    if (!r.ok) return { ok: false, ...heartbeatState(false, '', r.stderr), ms: 0, at: Date.now() };
+    fresh = true;
+  }
+  // The first ask also fetches the cluster's certificate; ask once more so the time shown is the cluster's, not tsh's.
+  if (fresh) await heartbeat({ contextName: contextOf(), kubeconfigPaths: [file] }, { gate: false });
+  /*
+   * tsh kube login no longer fetches the cluster's certificate; the first
+   * use does. With the Teleport login good that is the quiet step it always
+   * is — no browser, no relogin — so the certificate check is not needed
+   * here (it is what stops a context's heartbeat elsewhere).
+   */
+  return heartbeat({ contextName: contextOf(), kubeconfigPaths: [file] }, { gate: false });
+}
+
+/** Whether this home's Teleport login (keys/<proxy>/<user>.crt) has at least two minutes left — read from disk, never by running tsh. */
+function teleportLoginGood(home, proxy) {
+  const fs = require('fs');
+  const path = require('path');
+  const { X509Certificate } = require('crypto');
+  const host = String(proxy || '').replace(/^https?:\/\//, '').replace(/:\d+$/, '');
+  const dir = path.join(require('./teleport').expandHome(home || process.env.TELEPORT_HOME || '~/.tsh'), 'keys', host);
+  let best = 0;
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.crt')); } catch { return false; }
+  for (const n of names) {
+    try { best = Math.max(best, Date.parse(new X509Certificate(fs.readFileSync(path.join(dir, n))).validTo) || 0); } catch { /* not a certificate */ }
+  }
+  return best > Date.now() + 120000;
+}
+
+async function heartbeat(spec = {}, { gate = true } = {}) {
+  const cred = gate ? await teleportCredFor(spec) : { teleport: false };
+  if (cred.teleport && !cred.good) {
+    return {
+      ok: false, state: 'idle', ms: 0, at: Date.now(),
+      detail: cred.validUntil ? 'not checked — its Teleport certificate has expired; open it to log in again' : 'not checked — no Teleport certificate for it yet; open it to log in',
+    };
+  }
+  const { bin, baseArgs, env } = kube.kubectlArgsFor({ ...spec, namespace: null });
+  const t = Date.now();
+  const r = await run(bin, [...baseArgs, 'get', '--raw=/readyz', '--request-timeout=10s'], { env, timeout: 20000 });
+  const ms = Date.now() - t;
+  // kubectl's own words to classify (explainMissing rewrites stderr for people), the rewrite as the fallback detail.
+  const s = heartbeatState(r.ok, r.stdout, plain(r.rawStderr || r.stderr || ''));
+  if (s.state === 'error' && r.stderr) s.detail = plain(r.stderr).split('\n')[0].slice(0, 200);
+  return { ok: s.state === 'ok', ms, at: Date.now(), ...s };
+}
+
+/**
  * Which cloud, from the cluster itself, as cheaply as it can be asked — on
  * connecting to it, not on a timer. The server's version first: an EKS or
  * GKE one says so (v1.35.9-eks-…, v1.35.8-gke.…), and any signed-in user
@@ -693,7 +861,7 @@ async function top(spec = {}, { namespace } = {}) {
   return { ok: nodes.ok || pods.ok, nodes, pods };
 }
 
-module.exports = { cloudInfo, detectProvider,
+module.exports = { cloudInfo, detectProvider, heartbeat, heartbeatState, heartbeatTeleport, teleportCredFor,
   parseApiResources, categorize, discoverResourceTypes, getResources, getYaml, describe, deleteResource, canI, access, top,
   detailOf, conditionStatus, diffYaml, applyYaml, validateYaml, topPods, topNodes, topPodContainers, cordonNode, drainNode, getObject, crdColumnsFor, rowFrom, columnsFromCrdObject,
   getRawList, whoCan, patchSecretStringData, sampleChecksFromRules,

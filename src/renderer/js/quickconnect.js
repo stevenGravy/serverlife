@@ -677,7 +677,7 @@ export async function openQuickConnectDialog(initial = {}) {
     width: 'min(700px, 94vw)',
     render: (body, { close }) => {
       closeModal = close;
-      body.append(
+      body.append(...[
         recentList,
         field('Server', targetIn,
           'user@host, host:port, a whole ssh command line pasted in — or another '
@@ -692,7 +692,8 @@ export async function openQuickConnectDialog(initial = {}) {
           'With a command here, Run command answers in this window and Connect '
           + 'opens a session that starts by running it'),
         el('label', { style: 'font-size:11px;color:var(--muted);margin-bottom:5px;display:block', text: 'Result' }),
-        output, meta, advice);
+        // Nothing recent is no row at all, not a "null".
+        output, meta, advice].filter(Boolean));
 
       const onEnter = (e) => {
         if (e.key !== 'Enter') return;

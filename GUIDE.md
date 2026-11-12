@@ -1785,6 +1785,28 @@ come back, or want to know whether the list is telling you the truth. It is in
 minutes because changing the text rebuilds the list; the exact seconds are in
 each row's tooltip.
 
+**Kubernetes clusters get heartbeats too**, with *Heartbeats* on. Teleport
+publishes none for a Kubernetes cluster (`tsh kube ls` carries no expiry), so
+each cluster is asked — `GET /readyz`, which any signed-in user may read —
+once a minute for one you are logged in to, every five minutes for one you
+can use but have not logged in to (through a kubeconfig of the app's own,
+never `~/.kube/config`). The row shows `♥ 0.5s` while it answers, an amber
+`⚠ 3m` counting from when it stopped, `⚠ log in` when its credentials were
+refused or a sign-in plugin is missing, and `· no access` when Teleport
+answered that your role gives no Kubernetes access to it. A cluster you can
+only request cannot be asked, but Teleport lists it only while its agent
+heartbeats, so it says `♥ listed`.
+
+A check never makes tsh log in again or ask for MFA: a cluster reached
+through Teleport is asked only while its cached certificate, or for one not
+logged in to its Teleport login, is good — read from the tsh home the
+cluster actually uses, so with several homes a good login in one never
+vouches for an expired one in another — and is `· not checked` otherwise,
+until you open it. One that asks for MFA is not asked again that run.
+Heartbeats for the same cluster name in two Teleport clusters or two tsh
+homes are kept apart, and each has a kubeconfig of its own. Nothing is asked
+with *No background commands on servers* on.
+
 **The quiet button** appears next to it as soon as something has gone quiet,
 carrying the count, and cycles through three states:
 
@@ -1877,7 +1899,9 @@ marks that mean nothing for a cluster. Double-click opens it, logs into
 it, or starts a request, whichever it currently is; the bulk "Request
 access to N selected nodes…" action only ever counts the SSH ones in a
 mixed selection — a kube cluster's own request goes through its
-single-row menu instead. SSH and Teleport hosts carry a small **server
+single-row menu instead. Kubernetes rows count towards *Hosts listed per
+group in the sidebar* like SSH hosts, logged in or not, and so do the Local
+kubeconfigs (with *show all* for the rest). SSH and Teleport hosts carry a small **server
 icon** in the same place, so the two kinds read apart at a glance — *Settings →
 Server icon on SSH hosts* turns it off. A watched cluster that has gone keeps its
 ☸ on its gone row.

@@ -2565,6 +2565,13 @@ function registerIpc() {
   // The Cloud view: node pools, cloud identities, aws-auth, the console link (kubeprovider.js).
   handle('kube:cloudInfo', async (opts) => kuberesources.cloudInfo(opts?.spec || {}, { provider: opts?.provider || null }));
   handle('kube:detectProvider', async (opts) => kuberesources.detectProvider(opts?.spec || {}));
+  // A cluster's heartbeat (GET /readyz) — never with background commands turned off in Settings.
+  handle('kube:heartbeat', async (opts) => (quietRemote()
+    ? { ok: false, state: 'quiet', detail: 'Background commands on servers are off in Settings.' }
+    : kuberesources.heartbeat(opts?.spec || {})));
+  handle('kube:heartbeatTeleport', async (opts) => (quietRemote()
+    ? { ok: false, state: 'quiet', detail: 'Background commands on servers are off in Settings.' }
+    : kuberesources.heartbeatTeleport(opts || {})));
   // The cluster's page in its cloud's console — built here from what is known, never a URL from the renderer.
   handle('kube:openCloudConsole', async ({ provider, clusterName } = {}) => {
     const url = require('./kubeprovider').consoleUrl(provider, clusterName || '');
