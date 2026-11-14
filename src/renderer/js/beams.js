@@ -352,7 +352,6 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
     el('button', { class: 'ghost-btn sm', type: 'button', text: '+ Another file', style: 'margin-top:6px', onClick: () => { addCopyRow(); sync(); } })),
   'From this computer (left) to an absolute path in the image outside /home (right). A folder merges into its destination.');
   addCopyRow();
-  const noConsoleBox = can.noConsole ? checkbox("Don't open a console — start the build and come back to it", false) : null;
   const fileIn = textInput({ placeholder: '/path/to/build.yaml' });
   const fileField = field('Command file', el('div', {},
     fileIn,
@@ -393,7 +392,9 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
       commandsFile: m !== 'fork' && buildSel.value === 'file' ? fileIn.value.trim() || undefined : undefined,
       copies: m !== 'fork' && buildSel.value === 'copy'
         ? copyRows.map((r) => ({ from: r.fromIn.value.trim(), to: r.toIn.value.trim() })).filter((c) => c.from || c.to) : undefined,
-      noConsole: noConsoleBox?.input.checked || undefined,
+      // Whenever tsh can skip its own console, it always does: this app joins
+      // the build Beam as an ordinary session instead (see startPhaseHeadless).
+      noConsole: can.noConsole || undefined,
       roles: myRoles.filter((r, i) => roleBoxes[i].input.checked),
       region: regionSel.value || undefined,
     };
@@ -413,7 +414,6 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
   for (const n of [nameIn, fileIn]) n.addEventListener('input', sync);
   for (const n of [modeSel, regionSel, buildSel]) n.addEventListener('change', sync);
   for (const b of roleBoxes) b.input.addEventListener('change', sync);
-  noConsoleBox?.input.addEventListener('change', sync);
 
   const res = await modal({
     title: 'New Phase',
@@ -442,15 +442,18 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
         field('Build it', buildSel),
         fileField,
         copyField,
-        noConsoleBox,
         myRoles.length
           ? field('Delegate roles', el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 14px' }, ...roleBoxes),
             'The roles its builds may act as. None ticked: your own delegation permissions.')
           : null,
         field('Region', regionSel, 'Where the build runs, and where the Phase is kept.'),
         el('div', { class: 'hint', style: 'margin:4px 0 6px' },
-          'Runs in a new tab. In a console: install what the image needs, then run '
-          + 'tsh phase snapshot --final to save it and end the build. From a file: the log streams there.'),
+          can.noConsole
+            ? ('Opens straight into a session on its build Beam — file browser included. Install what the image '
+              + 'needs there, then run tsh phase snapshot --final to save it and end the build. A command file '
+              + 'runs on its own; join just to watch its log if you want to.')
+            : ('Runs in a new tab. In a console: install what the image needs, then run '
+              + 'tsh phase snapshot --final to save it and end the build. From a file: the log streams there.')),
         preview,
       ].filter(Boolean));
       sync();
@@ -475,12 +478,59 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
   let run;
   try { run = await window.api.beams.phaseAddArgs(res); } catch (e) { toast(e.message, 'error'); return false; }
   const what = res.forkFrom ? `fork of ${res.forkFrom}` : res.from ? `on ${res.from}` : 'new';
-  return runPhaseBuild(profile, run, `Phase build · ${res.name || what}`, {
+  const meta = {
     kind: 'add', name: res.name || '',
     mode: res.forkFrom ? 'fork' : res.from ? 'from' : 'base',
     source: res.forkFrom || res.from || '', commandsFile: res.commandsFile || '',
     copies: res.copies || [], roles: res.roles || [], region: res.region || '',
+  };
+  if (res.noConsole) return startPhaseHeadless(profile, run, meta);
+  return runPhaseBuild(profile, run, `Phase build · ${res.name || what}`, meta);
+}
+
+/**
+ * A no-console Phase build: run captured rather than handed to tsh's own
+ * console, the build recorded in the journal exactly as runPhaseBuild does,
+ * then straight into its build Beam through the ordinary beam session path
+ * (openBeam, same as addBeam() connects a fresh beam) — a real interactive
+ * session, file browser and all. Not an offer: skipping tsh's console and not
+ * joining anything would leave an interactive build with nobody able to type
+ * into it.
+ */
+async function startPhaseHeadless(profile, run, meta) {
+  const entry = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    proxy: profile.proxy, startedAt: Date.now(), result: 'running', ...meta,
+  };
+  /*
+   * A status-bar message is too easy to miss here: there is nothing else on
+   * screen yet to say a build is even happening, let alone that a session is
+   * about to open on its own. A popup, closed the moment the build Beam
+   * answers (success or not), says so where it cannot be missed.
+   */
+  let closeWait = null;
+  modal({
+    title: 'Starting the Phase build…',
+    width: 'min(420px, 94vw)',
+    render: (body, { close }) => {
+      closeWait = close;
+      body.append(el('div', { class: 'hint', text: 'This can take a moment — tsh is provisioning the sandbox VM. '
+        + 'A session opens on it automatically, file browser and all, as soon as it is up.' }));
+    },
   });
+  const r = await window.api.beams.phaseStart({ args: run.args, home: profile.homeDir, proxy: profile.proxy })
+    .catch((e) => ({ ok: false, error: e.message }));
+  closeWait?.(undefined);
+  if (!r.ok) { toast(r.error || 'Could not start the build', 'error', 9000); return false; }
+  entry.name = r.name || entry.name;
+  await saveJournal([entry, ...journal()]);
+  await refreshPhases(profile).catch(() => {});
+  if (!r.buildBeam) {
+    toast(`${entry.name || 'The build'} started, but tsh did not say which Beam — open it from the Phases list`, 'error', 12000);
+    return true;
+  }
+  await openBeam({ id: r.buildBeam, proxy: profile.proxy, home: profile.homeDir || null });
+  return true;
 }
 
 /**

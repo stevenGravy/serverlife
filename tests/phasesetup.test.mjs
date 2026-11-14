@@ -148,7 +148,7 @@ test('apply, copy, no-console and edit arguments', () => {
     ['phase', 'apply', '--file=/tmp/p.yaml', '--no-console', '--region=us-west-2']);
   assert.throws(() => beams.phaseApplyArgs({}), /phase.yaml/);
   assert.deepEqual(tail(beams.phaseAddArgs({ name: 'files', copies: [{ from: './config', to: '/opt/app/config' }], noConsole: true })),
-    ['phase', 'add', 'files', '--copy=/opt/app/config:./config', '--no-console']);
+    ['phase', 'add', 'files', '--copy=/opt/app/config:./config', '--no-console', '--format=json']);
   assert.throws(() => beams.phaseAddArgs({ copies: [{ from: 'x', to: '/home/beams/x' }] }), /outside \/home/);
   assert.throws(() => beams.phaseAddArgs({ copies: [{ from: 'x', to: '/opt/x' }], commandsFile: 'c.yaml' }), /not with a command file/);
   assert.deepEqual(tail(beams.phaseEditArgs({ name: 'tools', commandsFile: '/tmp/b.yaml' })), ['phase', 'edit', 'tools', '--commands-file=/tmp/b.yaml']);

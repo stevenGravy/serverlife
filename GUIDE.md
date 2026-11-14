@@ -771,6 +771,11 @@ lid, lose the wifi, quit the app by accident — the shell on the far side is
 still running, with its scrollback, waiting. Reattach and it is where you left
 it.
 
+A saved layout keeps a tmux tab as tmux: reopening ServerLife attaches to the
+same session on the same host, as the same login, and every window of it
+comes back as its own tab — not a fresh shell beside the session you left
+running.
+
 Only the server needs tmux. Nothing is installed on this machine: ServerLife
 speaks tmux's control protocol itself, over the connection that is already
 open — the same authentication, the same ControlMaster, the same single MFA
@@ -2101,8 +2106,10 @@ cluster, see [Which tsh](#which-tsh).)
   apply`). Roles and a region can be chosen, and the exact command is previewed.
   Where tsh has them, it can also be built by **copying files from this
   computer** (`--copy`, a local file or folder to an absolute path outside
-  `/home`), and **started without opening its console** (`--no-console`) to
-  come back to later.
+  `/home`). With a tsh that has `--no-console`, the build skips tsh's own
+  console and **opens straight into a session on its build Beam** — an
+  ordinary ServerLife session, file browser included; a command file runs on
+  its own, and joining is only to watch its log.
 - **+ From setups…** puts a Phase together from ready-made **setups**, as
   stages of a `phase.yaml` built with `tsh phase apply` (needs a tsh that has
   it). Each stage is its own Phase, built on the one before it: either it
@@ -3244,7 +3251,8 @@ each kind saying which tool takes it from there.
   `ubuntu@ent: ~/deploy` — who, where, and in which directory. Clicking one row
   reopens just that session and closes the offer; the rest stay saved for next
   launch. A local shell comes back in the directory it was in, and a remote one
-  is sent a `cd` once its shell is up.
+  is sent a `cd` once its shell is up. A tmux tab is attached to its session
+  again, and a Kubernetes cluster's browser reopens on that cluster.
 - **Hide hosts** you never use; show them again from any host's menu.
 - Searchable host filter across names, clusters, addresses and
   [tags](#teleport), with a count of how many hosts matched. The buttons under

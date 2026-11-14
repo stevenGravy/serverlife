@@ -2742,6 +2742,8 @@ function registerIpc() {
   handle('beams:phaseAddArgs', async (opts) => phaseRun(beams.phaseAddArgs(opts || {}), opts));
   handle('beams:phaseEditArgs', async (opts) => phaseRun(beams.phaseEditArgs(opts || {}), opts));
   handle('beams:phaseApplyArgs', async (opts) => phaseRun(beams.phaseApplyArgs(opts || {}), opts));
+  // A no-console build: run and captured rather than handed to a terminal — read for the build Beam it started.
+  handle('beams:phaseStart', inHome(async (opts) => beams.startNonInteractive(opts?.args || [], opts || {})));
   handle('beams:phaseSnapshot', inHome(async (opts) => beams.phaseSnapshot(opts || {})));
   handle('beams:services', inHome(async (opts) => beams.beamServices(opts || {})));
   handle('beams:serviceLogs', inHome(async (opts) => beams.beamServiceLogs(opts || {})));

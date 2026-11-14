@@ -167,6 +167,7 @@ contextBridge.exposeInMainWorld('api', {
     failedPhases: (opts) => call('beams:failedPhases', opts),
     phaseEditArgs: (opts) => call('beams:phaseEditArgs', opts),
     phaseApplyArgs: (opts) => call('beams:phaseApplyArgs', opts),
+    phaseStart: (opts) => call('beams:phaseStart', opts),
     phaseSnapshot: (opts) => call('beams:phaseSnapshot', opts),
     services: (opts) => call('beams:services', opts),
     serviceLogs: (opts) => call('beams:serviceLogs', opts),

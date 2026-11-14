@@ -271,7 +271,8 @@ function phaseAddArgs({ proxy, name, from, forkFrom, commandsFile, copies, noCon
   // Instead of an interactive console: the build runs the file and streams its log.
   if (commandsFile) args.push('--commands-file=' + commandsFile);
   args.push(...copyArgs);
-  if (noConsole) args.push('--no-console');
+  // Only needed non-interactively: a console reads text, nothing reads this.
+  if (noConsole) args.push('--no-console', '--format=json');
   if (Array.isArray(roles) && roles.length) args.push('--roles=' + roles.join(','));
   if (region) args.push('--region=' + region);
   return args;
@@ -292,6 +293,24 @@ function copyFlags(copies) {
     if (!from) throw new Error(`Which local file goes to ${to}?`);
     return `--copy=${to}:${from}`;
   });
+}
+
+/**
+ * Run a Phase build's argv non-interactively — only valid with `--no-console`:
+ * no terminal, no console, just the JSON tsh prints once the build Beam is up,
+ * read here for the Beam it names.
+ */
+async function startNonInteractive(args, { home } = {}) {
+  const r = await run(args, { home, timeout: 300000 });
+  const out = plain(r.stdout);
+  const at = out.indexOf('{');
+  if (at >= 0) {
+    try {
+      const data = JSON.parse(out.slice(at));
+      return { ok: true, buildBeam: data.build_beam || '', name: data.name || '', raw: data };
+    } catch { /* output that is not JSON falls through to the error */ }
+  }
+  return { ok: false, error: plain(r.stderr) || out || 'tsh phase add/edit returned nothing to read' };
 }
 
 /**
@@ -524,6 +543,6 @@ function execArgs({ name, proxy, jumphost } = {}, command = null) {
 
 module.exports = {
   supported, list, add, remove, stillListed, exec, publish, unpublish, scp, addSupport, phases, removePhase, phaseAddArgs, phaseEditArgs, failedPhases,
-  phaseApplyArgs, phaseSnapshot, beamServices, beamServiceLogs, copyFlags, servicesFrom,
+  phaseApplyArgs, phaseSnapshot, beamServices, beamServiceLogs, copyFlags, servicesFrom, startNonInteractive,
   sshArgs, execArgs, toBeam,
 };

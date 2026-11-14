@@ -2,6 +2,7 @@ import { state } from './state.js';
 import { el, fmtDate } from './util.js';
 import { modal, toast, status, checkbox, prompt, confirm } from './ui.js';
 import { openHost, openLocalShell, splitActivePane, shortCwd } from './sessions.js';
+import { openTmux, tmuxRestoreOf, localTmuxHost } from './tmux.js';
 
 /**
  * Saving and restoring the window layout.
@@ -47,6 +48,10 @@ export function captureWorkspace() {
         return { kind: 'kubeLogViewer', spec: p.kubeSpec, target: p.kubeLogTarget || null, title: p.kubeTitle || p.title || null };
       }
       if (p.kubeRestore) return { kind: 'kubePod', ...p.kubeRestore, title: p.title || null };
+      if (p.kind === 'tmux') {
+        const t = tmuxRestoreOf(p);
+        if (t) return t;
+      }
       if (p.kind === 'local') {
         return { kind: 'local', cwd: p.cwd || null, shell: p.shellName || null, blank: !!p.blankShell };
       }
@@ -117,6 +122,9 @@ export async function restoreWorkspace(ws) {
   if (!ws?.tabs?.length) return;
   let opened = 0;
   let skipped = 0;
+  // A tmux session is attached once: attaching brings back every one of its
+  // windows, so its other tabs and panes are already there.
+  const tmuxDone = new Set();
 
   for (const tab of ws.tabs) {
     // Open the first pane as the tab, then split for the rest in order.
@@ -161,6 +169,14 @@ export async function restoreWorkspace(ws) {
           const m = await import('./sessions.js');
           if (pane.kind === 'device') await m.openDeviceSession(pane.spec);
           else await m.openVncSession(pane.spec);
+        } else if (pane.kind === 'tmux') {
+          const key = `${pane.local ? 'local' : pane.hostId}|${pane.login || ''}|${pane.session}`;
+          if (tmuxDone.has(key)) { first = false; continue; }
+          tmuxDone.add(key);
+          const host = pane.local ? localTmuxHost() : resolveHost(pane);
+          if (!host) { skipped++; continue; }
+          const rec = await openTmux(host, { login: pane.login || undefined, session: pane.session });
+          if (!rec) { skipped++; continue; }
         } else if (pane.kind === 'local') {
           // The shell it was running comes back too, when one was chosen.
           const opts = { shell: pane.shell || undefined, blank: !!pane.blank };
@@ -222,6 +238,11 @@ function describeTabTargets(tab) {
       if (p.kind === 'local') {
         const where = p.cwd ? shortCwd(p.cwd) : '';
         out.push(where ? `local shell: ${where}` : 'local shell');
+        return;
+      }
+      if (p.kind === 'tmux') {
+        const on = p.local ? 'this machine' : (p.login ? `${p.login}@${p.label || 'host'}` : (p.label || 'host'));
+        out.push(`tmux “${p.session}” on ${on}`);
         return;
       }
       // `target` is already user@host for both kinds; the login is there

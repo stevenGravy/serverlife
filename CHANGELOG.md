@@ -11,6 +11,29 @@ tagged `v<version>`.
 
 ---
 
+## [0.38.0] — 2026-11-14
+
+A new Phase build opens straight into a session on its build Beam, and
+reopening ServerLife puts tmux sessions back as tmux sessions.
+
+### Changed
+
+- **A new Phase build opens in a session on its build Beam** — with a tsh that
+  has `--no-console`, ServerLife starts the build without tsh's console and
+  joins the build Beam as an ordinary session, file browser included, with a
+  popup while the sandbox comes up. The *Don't open a console* checkbox is
+  gone: it is always done this way when tsh can.
+
+### Fixed
+
+- **Reopening a layout reattaches tmux sessions.** A tmux tab was saved as a
+  plain shell on its host, so a restart opened a new shell instead of the
+  session still running there; it now attaches to the same session, every
+  window back as a tab. Kubernetes cluster browsers reopen alongside, as
+  before.
+
+---
+
 ## [0.37.0] — 2026-11-12
 
 Heartbeats everywhere a host is listed: Kubernetes agents heard through

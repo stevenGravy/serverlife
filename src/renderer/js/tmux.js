@@ -903,6 +903,27 @@ export function tmuxSessionOf(pane) {
   return sessions.get(pane?.tmuxId) || null;
 }
 
+/**
+ * What a saved layout needs to attach this pane's session again: the host,
+ * the login and the session's name. A tmux pane carries its connection, so
+ * it was being saved as a plain shell on the host, and a restart brought
+ * back a fresh shell instead of the session still running there. Null once
+ * the session has ended or detached — there is nothing to attach to then.
+ */
+export function tmuxRestoreOf(pane) {
+  const rec = sessions.get(pane?.tmuxId);
+  if (!rec) return null;
+  const local = isLocalId(rec.connId);
+  return {
+    kind: 'tmux',
+    hostId: local ? null : rec.host.id,
+    local,
+    label: rec.host.name || rec.host.alias || null,
+    login: rec.login || null,
+    session: rec.name,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* The "open in tmux" dialog                                           */
 /* ------------------------------------------------------------------ */
