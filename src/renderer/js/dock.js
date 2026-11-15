@@ -1423,6 +1423,7 @@ export async function runMulti(command, runAsLogin = null, {
   if (!scheduled) {
     lastCommand = cmd;
     lastRunAs = runAsLogin || '';
+    mxView = 'command';
     openDock('multiexec');
   }
   status(`${label ? label + ' — running' : 'Running'} on ${targets.length} host(s)${runAsLogin ? ' as ' + runAsLogin : ''}…`, scheduled ? 6000 : 0);

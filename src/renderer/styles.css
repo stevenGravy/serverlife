@@ -580,6 +580,18 @@ input, textarea, select { font-family: inherit; font-size: inherit; color: inher
   position: relative;
   padding-left: calc(26px + var(--depth, 0) * 16px);
 }
+/* A Phase under the one it was built on or forked from (Relationships). */
+.phase-row .chev { font-size: 8px; width: 9px; color: var(--muted); flex: none; cursor: pointer; }
+.phase-row.phase-base { color: var(--muted); cursor: pointer; }
+.phase-row .count { font-size: 10.5px; color: var(--muted); flex: none; }
+.sb-item.phase-row.nested { position: relative; padding-left: calc(20px + var(--depth, 0) * 16px); }
+.sb-item.phase-row.nested::before {
+  content: '';
+  position: absolute;
+  left: calc(10px + var(--depth, 1) * 16px);
+  top: 0; bottom: 0; width: 1px;
+  background: var(--border-soft);
+}
 .sb-item.in-folder::before,
 .sb-folder[style*="--depth:1"]::before,
 .sb-folder[style*="--depth:2"]::before,

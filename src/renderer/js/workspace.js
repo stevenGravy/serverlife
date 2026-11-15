@@ -105,6 +105,19 @@ export function captureWorkspace() {
 /** Find a live host descriptor for a saved pane. */
 function resolveHost(pane) {
   if (!pane.hostId) return null;
+  /*
+   * A beam is in neither list below — beams are listed per cluster, and not
+   * read yet this early after a restart — so every beam pane, tmux or not,
+   * was skipped. Its id says everything needed to dial it again:
+   * `beam:<proxy>:<name>`, the proxy carrying its port.
+   */
+  const beam = /^beam:(.+):([^:]+)$/.exec(pane.hostId);
+  if (beam) {
+    const [, proxy, name] = beam;
+    const home = pane.home !== undefined ? pane.home
+      : (state.teleportProfiles || []).find((x) => x.proxy === proxy)?.homeDir || null;
+    return { id: pane.hostId, type: 'beam', name, proxy, home };
+  }
   for (const nodes of state.teleportNodes.values()) {
     const n = nodes.find((x) => x.id === pane.hostId);
     if (n) return n;

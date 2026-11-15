@@ -917,6 +917,8 @@ export function tmuxRestoreOf(pane) {
   return {
     kind: 'tmux',
     hostId: local ? null : rec.host.id,
+    // A beam is dialled through the tsh home it was opened with.
+    ...(rec.host.type === 'beam' ? { home: rec.host.home || null } : {}),
     local,
     label: rec.host.name || rec.host.alias || null,
     login: rec.login || null,

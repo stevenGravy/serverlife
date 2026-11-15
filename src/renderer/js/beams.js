@@ -32,6 +32,21 @@ export const REGIONS = [
   { value: 'ap-northeast-1', label: 'ap-northeast-1' },
 ];
 
+// What tsh accepts as a Phase name — a DNS label, the same rule phasesetup.js
+// already enforces for a setup stage's name (they end up as the same thing).
+const DNS_LABEL = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const MAX_NAME = 54;
+
+/** Why a Phase name wouldn't be accepted, or '' if it would be (empty included — tsh picks one then). */
+function phaseNameProblem(name) {
+  if (!name) return '';
+  if (!DNS_LABEL.test(name) || name.length > MAX_NAME) {
+    return `"${name}" is not a valid Phase name — lowercase letters, digits and hyphens, `
+      + `starting and ending with a letter or digit, up to ${MAX_NAME} characters`;
+  }
+  return '';
+}
+
 /** The profiles worth asking about beams: logged in, and not hidden. */
 export function beamProfiles() {
   const hidden = new Set(state.settings.hiddenBeamProxies || []);
@@ -230,10 +245,20 @@ export async function removePhase(profile, phase) {
 /*
  * A record of every Phase build started from here: how it was made (from the
  * base image, on top of a Phase, forked from one, from a command file), when,
- * and how it ended. tsh's own list cannot say the first part — a fork comes
- * back with its *base image* as its parent, not the Phase it was forked from —
- * so without this a Phase's history would leave out the step that made it.
- * Kept in settings, newest first, capped.
+ * and how it ended. tsh's own list cannot say the first part — every Phase
+ * checked against a real cluster reports `parent` as the base image, never
+ * the Phase it was actually built on or forked from — so without this a
+ * Phase's history, and the Relationship view, would leave out the step that
+ * made it. Kept in settings, newest first, capped.
+ *
+ * This is deliberately a local history, not a cache of something the
+ * cluster already knows — it is the only record there is. A Phase forked
+ * or built outside this app (typed into a terminal directly, started from
+ * another machine or another tool) has no entry here and so no lineage
+ * this app can show, which is a real and current limitation, not a bug to
+ * chase further: the fix is `tsh phase ls` itself reporting true parentage
+ * one day, not a cleverer local reconstruction of it. Keep this as the
+ * answer until that lands.
  */
 const JOURNAL_MAX = 200;
 const journal = () => state.settings.phaseJournal || [];
@@ -247,8 +272,15 @@ export function buildsOf(proxy, name) {
 }
 
 /** How a Phase was first made, if it was made from here: the build that saved it. */
+/*
+ * Not `result === 'saved'`: a build still shows as "building" in `tsh phase
+ * ls` long before settleBuilds() can call it saved, and a fork's lineage is
+ * known the moment the build starts, not once it finishes — waiting for
+ * "saved" left every build-in-progress looking parentless until it published.
+ * Only a build recorded as failed is excluded.
+ */
 function originOf(proxy, name) {
-  return buildsOf(proxy, name).filter((e) => e.kind === 'add' && e.result === 'saved').pop() || null;
+  return buildsOf(proxy, name).filter((e) => e.kind === 'add' && e.result !== 'failed').pop() || null;
 }
 
 /**
@@ -315,6 +347,7 @@ export async function runPhaseBuild(profile, run, title, meta) {
 export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
   const opts = { proxy: profile.proxy, home: profile.homeDir };
   const nameIn = textInput({ placeholder: 'Leave empty and tsh picks a name' });
+  const nameError = el('div', { class: 'hint', style: 'color:var(--red);white-space:pre-wrap;min-height:1em' });
   const modeSel = select([
     { value: 'base', label: 'The default base image' },
     { value: 'from', label: 'Build on top of a Phase (--from)' },
@@ -406,6 +439,7 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
     if (modeSel.value === 'fork') buildSel.value = 'console';
     fileField.classList.toggle('hidden', buildSel.value !== 'file');
     copyField.classList.toggle('hidden', buildSel.value !== 'copy');
+    nameError.textContent = phaseNameProblem(nameIn.value.trim());
     try {
       const r = await window.api.beams.phaseAddArgs(collect());
       preview.textContent = ['tsh', ...r.args].join(' ');
@@ -437,6 +471,7 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
       body.append(...[
         builderNote,
         field('Name', nameIn),
+        nameError,
         field('Start from', modeSel),
         sourceField,
         field('Build it', buildSel),
@@ -464,6 +499,8 @@ export async function newPhase(profile, { mode = 'base', source = '' } = {}) {
         label: 'Start the build', class: 'primary-btn',
         onClick: ({ close }) => {
           const v = collect();
+          const nameProblem = phaseNameProblem(v.name || '');
+          if (nameProblem) return toast(nameProblem, 'error');
           if (modeSel.value !== 'base' && !v.from && !v.forkFrom) return toast('Which Phase?', 'error');
           if (buildSel.value === 'file' && modeSel.value !== 'fork' && !v.commandsFile) return toast('Which command file?', 'error');
           if (buildSel.value === 'copy' && modeSel.value !== 'fork' && !v.copies?.length) return toast('Which files?', 'error');
@@ -691,7 +728,7 @@ export function phaseRelations(proxy, name) {
   }
   const mine = phaseName(name);
   const forksOf = new Set(journal()
-    .filter((e) => e.proxy === proxy && e.kind === 'add' && e.result === 'saved' && e.mode === 'fork' && phaseName(e.source) === mine)
+    .filter((e) => e.proxy === proxy && e.kind === 'add' && e.result !== 'failed' && e.mode === 'fork' && phaseName(e.source) === mine)
     .map((e) => e.name));
   return {
     chain,

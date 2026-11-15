@@ -4,7 +4,7 @@ import { toast, contextMenu, modal, select, textInput, field, checkbox, confirm,
 import { openLocalShell, splitActivePane, refreshPaneTitles } from './sessions.js';
 import { openKubeBrowser } from './kubebrowser.js';
 import { requestableHosts } from './requestable.js';
-import { groupKeyFor } from './folders.js';
+import { groupKeyFor, migrateKubeHostKeys } from './folders.js';
 import { isWatched, toggleWatch } from './watch.js';
 import { askNamespace, extraNamespaces } from './kubenamespaces.js';
 import { providerFor, providerBadge, cloudMenuItem, detectOnConnect } from './kubecloud.js';
@@ -461,7 +461,7 @@ export function kubeHostsForProfile(p) {
   // search --kind=kube_cluster` actually finds it — and not at all while
   // that is unknown, or when it does not.
   const reqFound = unusable.length ? requestableKubeFor(p, groupKey) : null;
-  return [
+  const hosts = [
     ...unusable.filter((c) => !askableNames.has(nameOf(c)) && reqFound?.has(nameOf(c))).map((c) => {
       const found = reqFound.get(nameOf(c));
       return {
@@ -483,6 +483,8 @@ export function kubeHostsForProfile(p) {
       groupKey, profile: p, requestable: true, requestableInfo: h,
     })),
   ];
+  migrateKubeHostKeys(hosts);
+  return hosts;
 }
 
 /** A cluster this Teleport cluster offers but nobody has logged into yet — click to `tsh kube login` it. */
@@ -1610,9 +1612,13 @@ async function openKubeContextMenu(e, c, groupKey) {
   // The same watch SSH hosts already have — isWatched/toggleWatch are
   // already host-shaped (keyed by hostKey(), which falls back to .id for
   // anything without a uuid or host.type), so this needed a row-shaped
-  // object and a menu item, not a change to watch.js itself.
+  // object and a menu item, not a change to watch.js itself. Shaped like the
+  // sidebar's row (kind and group), so both read the same key.
   {
-    const watchHost = { id: c.id, name: c.kubeClusterName || c.name, labels: labelsForContext(c) || {} };
+    const watchHost = {
+      id: c.id, name: c.kubeClusterName || c.name, labels: labelsForContext(c) || {},
+      ...(groupKey ? { kind: 'kube', groupKey } : {}),
+    };
     const watching = isWatched(watchHost);
     items.push({
       label: watching ? 'Stop watching this cluster' : 'Watch this cluster',

@@ -11,6 +11,39 @@ tagged `v<version>`.
 
 ---
 
+## [0.38.1] — 2026-11-15
+
+Phases in Folders, a List or a Relationships tree; tmux and shells on beams
+come back after a restart; Kubernetes clusters keep their watch, colour and
+folder whether logged in or not.
+
+### Added
+
+- **Phases in Folders, a List, or Relationships** — a switch at the top of the
+  Phases tab. *Relationships* draws each Phase under the one it was built on
+  or forked from (`⑂ fork of instruqt`), with the base image as a label above
+  them; ▼ opens and shuts each branch, and a shut one stays shut.
+- **A Phase name is checked as it is typed** — lowercase letters, digits and
+  hyphens — and *Start the build* will not send one tsh would refuse.
+
+### Changed
+
+- **A Phase still building already has its lineage**: a fork shows under the
+  Phase it came from from the moment it starts, not once it is saved.
+
+### Fixed
+
+- **A tmux tab on a beam reopens after a restart**, as does a plain beam
+  shell: beams were looked for in lists not read yet that early, so every
+  beam pane in a saved layout was skipped.
+- **A watched, coloured or foldered Kubernetes cluster lost that when you
+  logged in or out of it**: it is now the same cluster either way, and what
+  was saved under its old key moves over by itself.
+- **Running a command from multi-exec** shows the command view, not whichever
+  view the dock was last on.
+
+---
+
 ## [0.38.0] — 2026-11-14
 
 A new Phase build opens straight into a session on its build Beam, and

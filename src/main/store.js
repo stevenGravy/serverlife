@@ -1750,6 +1750,7 @@ function trimRequestResources(resources) {
 function hostPrefKey(host) {
   if (!host) return '';
   if (host.uuid) return 'uuid:' + host.uuid;
+  if (host.kind === 'kube' && host.groupKey && host.name) return `kube:${host.groupKey}:${host.name}`;
   if (host.type === 'teleport' && host.name) return `tsh:${host.cluster || ''}:${host.name}`;
   return host.id || (host.alias ? 'ssh:' + host.alias : '');
 }

@@ -2083,6 +2083,14 @@ cluster, see [Which tsh](#which-tsh).)
   was saved, a tooltip with its snapshot, region, owner and, for a failed one,
   the error and how to look inside it. *failed* is `tsh phase ls-failed`: the
   snapshots failed builds left behind. ⟳ reads either again.
+- **Folders, List or Relationships**, at the top of the *Phases* tab: your
+  Phase folders (the default), every Phase in one alphabetical list, or each
+  Phase under the one it was built on or forked from, with the base image as
+  a label above them. The lineage comes from the builds started from this
+  app — `tsh phase ls` names only the base image — so a Phase made elsewhere
+  sits at the top level. A Phase still building is placed already. ▼ beside
+  a Phase or the base image shuts what is under it — `+2` says how many — and
+  it stays shut until opened again.
 - **Start a beam…** gains **Start from** — the standard image or any ready
   Phase, picked from your Phase folders (opened and closed as on the Phases
   tab) or found with the search box above them; the region follows the
@@ -3252,7 +3260,8 @@ each kind saying which tool takes it from there.
   reopens just that session and closes the offer; the rest stay saved for next
   launch. A local shell comes back in the directory it was in, and a remote one
   is sent a `cd` once its shell is up. A tmux tab is attached to its session
-  again, and a Kubernetes cluster's browser reopens on that cluster.
+  again — on a beam too — and a Kubernetes cluster's browser reopens on that
+  cluster.
 - **Hide hosts** you never use; show them again from any host's menu.
 - Searchable host filter across names, clusters, addresses and
   [tags](#teleport), with a count of how many hosts matched. The buttons under

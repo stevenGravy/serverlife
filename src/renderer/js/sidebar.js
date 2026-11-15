@@ -24,7 +24,7 @@ import {
   refreshBeams, beamsFor, beamsSupported, markedAsBeams, beamNodeNames,
   addBeam, beamMenu, openBeam, expiresIn, setMarkedAsBeams, hideBeamsFor, showBeamsFor,
   phasesSupported, phaseListFor, beamTabFor, setBeamTab, refreshPhases, phaseMenu, newPhase,
-  failedListFor, refreshFailedPhases, failedMenu,
+  failedListFor, refreshFailedPhases, failedMenu, phaseRelations,
 } from './beams.js';
 import { labelEntries, compileQuery, toggleTerm, hasTerm, termFor, collectTags } from './tags.js';
 import { openTagBrowser, openHostTagsDialog } from './tagbrowser.js';
@@ -773,6 +773,7 @@ export async function openSshConfigDialog() {
 export function hostPrefKey(host) {
   if (!host) return '';
   if (host.uuid) return 'uuid:' + host.uuid;
+  if (host.kind === 'kube' && host.groupKey && host.name) return `kube:${host.groupKey}:${host.name}`;
   if (host.type === 'teleport' && host.name) return `tsh:${host.cluster || ''}:${host.name}`;
   return host.id || (host.alias ? 'ssh:' + host.alias : '');
 }
@@ -3015,7 +3016,19 @@ function beamSection(p) {
     : el('div', { class: 'sb-subhead' },
         el('span', { text: 'beams' }),
         el('span', { class: 'sb-subhead-n', text: all.length ? String(all.length) : '' }))];
-  if (tab === 'phases') return [...rows, ...phaseRows(p, phaseList)];
+  if (tab === 'phases') {
+    const mode = phasesViewMode();
+    const viewTab = (id, label) => el('button', {
+      class: 'beam-tab' + (mode === id ? ' active' : ''),
+      onClick: (e) => { e.stopPropagation(); setPhasesViewMode(id); },
+    }, el('span', { text: label }));
+    rows.push(el('div', { class: 'sb-subhead beam-tabs' },
+      viewTab('folders', 'Folders'), viewTab('list', 'List'), viewTab('relationship', 'Relationships')));
+    rows.push(...(mode === 'relationship' ? phaseRelationRows(p, phaseList)
+      : mode === 'list' ? phaseFlatRows(p, phaseList)
+      : phaseRows(p, phaseList)));
+    return rows;
+  }
   if (tab === 'failed') return [...rows, ...failedRows(p, failedListFor(p.proxy))];
   for (const b of list) rows.push(beamRow(b));
   rows.push(el('div', {
@@ -3071,7 +3084,7 @@ function phaseRow(host, groupKey, opts = {}) {
   const ready = ph.state === 'ready';
   const failed = /fail|error/i.test(ph.state || '');
   const row = el('div', {
-    class: 'sb-item phase-row' + (opts.folder ? ' in-folder' : ''),
+    class: 'sb-item phase-row' + (opts.folder ? ' in-folder' : opts.depth ? ' nested' : ''),
     style: opts.depth ? `--depth:${opts.depth}` : null,
     title: [
       ph.name,
@@ -3088,7 +3101,10 @@ function phaseRow(host, groupKey, opts = {}) {
     el('span', { class: 'st ' + (ready ? 'connected' : failed ? 'error' : 'connecting') }),
     el('span', { class: 'name', text: ph.name }),
     el('span', { class: 'tag' + (ready ? '' : failed ? ' gone' : ' stale'), text: ph.state || '?' }),
-    ph.parent ? el('span', { class: 'tag', text: ph.parent }) : null,
+    // In the Relationships view, what it was made from — tsh's own `parent`
+    // names only the base image, which is the one thing that view already shows.
+    opts.via ? el('span', { class: 'tag', text: opts.via })
+      : ph.parent && opts.via !== '' ? el('span', { class: 'tag', text: ph.parent }) : null,
     ph.publishedAt ? el('span', { class: 'tag', text: goneFor(ph.publishedAt) + ' ago' }) : null);
   row.addEventListener('dblclick', () => { if (ready) addBeam(p, { phase: ph.name }); });
   row.addEventListener('contextmenu', (e) => {
@@ -3111,46 +3127,68 @@ function phaseRow(host, groupKey, opts = {}) {
   return row;
 }
 
-/** The Phases tab: `tsh phase ls`, in its own folders, and a way to make another of either. */
-function phaseRows(p, info) {
-  const note = (text) => el('div', { class: 'sb-empty', style: 'padding-left:20px', text });
-  // Last in the tab whatever else it shows, as "+ Start a beam…" is on the other.
-  const addRow = (first) => el('div', {
+/** Folders (the default — unchanged), a flat list, or the build lineage between them. */
+function phasesViewMode() { return state.settings.phasesView || 'folders'; }
+
+async function setPhasesViewMode(mode) {
+  state.settings = await window.api.settings.set({ phasesView: mode });
+  renderSidebar();
+}
+
+/**
+ * "+ New Phase...", "+ From setups..." and -- only where folders apply --
+ * "+ New Folder...": the same row every Phases view ends with, so switching
+ * views never hides the way to make another one.
+ */
+function phaseAddTrailer(p, groupKey, hosts, { first = false, folders = true } = {}) {
+  const grow = (node) => { node.style.flex = '1'; node.style.minWidth = '0'; return node; };
+  const addRow = grow(el('div', {
     class: 'sb-item beam-add phase-add',
     title: 'tsh phase add: a build console on a build beam, from the default image, on top of a Phase, or forked from one',
     onClick: () => newPhase(p),
   },
     el('span', { class: 'st', style: 'background:var(--accent)' }),
-    el('span', { class: 'name', text: first ? '+  Build the first Phase\u2026' : '+  New Phase\u2026' }));
-  // The other way to make one: tools, services and files put together as stages (tsh phase apply).
-  const setupRow = () => el('div', {
+    el('span', { class: 'name', text: first ? '+  Build the first Phase…' : '+  New Phase…' })));
+  const setupRow = grow(el('div', {
     class: 'sb-item beam-add phase-add',
     title: 'Pick setups — Go, Postgres, the AWS CLI, your dotfiles, a repo to clone — into a phase.yaml, and build it with tsh phase apply',
     onClick: async () => (await import('./phasebuilder.js')).openPhaseBuilder(p),
   },
     el('span', { class: 'st', style: 'background:var(--accent)' }),
-    el('span', { class: 'name', text: '+  From setups\u2026' }));
-  if (!info || (info.loading && !info.phases?.length)) return [note('Reading Phases (tsh phase ls)\u2026')];
-  if (!info.ok) return [note(info.error || 'Could not read the Phases'), addRow(true), setupRow()];
-  const all = info.phases || [];
-  const list = filterText
-    ? all.filter((x) => JSON.stringify(x).toLowerCase().includes(filterText.toLowerCase()))
-    : all;
-  if (!all.length) return [note('No Phases yet.'), addRow(true), setupRow()];
-  if (!list.length) return [note('No Phase matches the filter.')];
-
-  const groupKey = phaseGroupKeyFor(p);
-  const hosts = list.map((ph) => ({ kind: 'phase', id: `phase:${p.proxy}:${ph.name}`, name: ph.name, labels: {}, ph, profile: p }));
-
-  const addFolderRow = el('div', {
+    el('span', { class: 'name', text: '+  From setups…' })));
+  if (!folders) return [el('div', { style: 'display:flex;gap:6px' }, addRow, setupRow)];
+  const addFolderRow = grow(el('div', {
     class: 'sb-item beam-add phase-add',
-    style: 'flex:1;min-width:0',
     title: 'A place to drag Phases into, or file one into from its own menu',
     onClick: () => openFolderDialog({ group: groupKey, hosts }),
   },
     el('span', { class: 'st', style: 'background:var(--muted)' }),
-    el('span', { class: 'name', text: '+  New Folder…' }));
+    el('span', { class: 'name', text: '+  New Folder…' })));
+  return [el('div', { style: 'display:flex;gap:6px' }, addFolderRow, addRow, setupRow)];
+}
 
+/** `info.phases`, trimmed to the filter box, or the empty/error/loading row in its place. */
+function phaseListOrNote(info) {
+  const note = (text) => el('div', { class: 'sb-empty', style: 'padding-left:20px', text });
+  if (!info || (info.loading && !info.phases?.length)) return { note: note('Reading Phases (tsh phase ls)…') };
+  if (!info.ok) return { note: note(info.error || 'Could not read the Phases'), empty: true };
+  const all = info.phases || [];
+  const list = filterText
+    ? all.filter((x) => JSON.stringify(x).toLowerCase().includes(filterText.toLowerCase()))
+    : all;
+  if (!all.length) return { note: note('No Phases yet.'), empty: true };
+  if (!list.length) return { note: note('No Phase matches the filter.') };
+  return { list };
+}
+
+/** The Phases tab in Folders view: `tsh phase ls`, in its own folders, and a way to make another of either. */
+function phaseRows(p, info) {
+  const groupKey = phaseGroupKeyFor(p);
+  const { note, list, empty } = phaseListOrNote(info);
+  if (note && empty) return [note, ...phaseAddTrailer(p, groupKey, [], { first: true })];
+  if (note) return [note];
+
+  const hosts = list.map((ph) => ({ kind: 'phase', id: `phase:${p.proxy}:${ph.name}`, name: ph.name, labels: {}, ph, profile: p }));
   const rows = [];
   const walk = (parent, depth) => {
     for (const f of foldersIn(groupKey, parent)) {
@@ -3163,13 +3201,133 @@ function phaseRows(p, info) {
   };
   walk(null, 0);
   for (const h of hosts.filter((x) => !isFiled(x, groupKey))) rows.push(phaseRow(h, groupKey));
-  const lastPhaseRow = addRow(false);
-  lastPhaseRow.style.flex = '1';
-  lastPhaseRow.style.minWidth = '0';
-  const lastSetupRow = setupRow();
-  lastSetupRow.style.flex = '1';
-  lastSetupRow.style.minWidth = '0';
-  rows.push(el('div', { style: 'display:flex;gap:6px' }, addFolderRow, lastPhaseRow, lastSetupRow));
+  rows.push(...phaseAddTrailer(p, groupKey, hosts));
+  return rows;
+}
+
+/** The Phases tab in List view: every Phase, alphabetically, no folders. */
+function phaseFlatRows(p, info) {
+  const groupKey = phaseGroupKeyFor(p);
+  const { note, list, empty } = phaseListOrNote(info);
+  if (note && empty) return [note, ...phaseAddTrailer(p, groupKey, [], { first: true, folders: false })];
+  if (note) return [note];
+
+  const rows = [...list].sort((a, b) => a.name.localeCompare(b.name))
+    .map((ph) => phaseRow({ kind: 'phase', id: `phase:${p.proxy}:${ph.name}`, name: ph.name, labels: {}, ph, profile: p }, groupKey));
+  rows.push(...phaseAddTrailer(p, groupKey, [], { folders: false }));
+  return rows;
+}
+
+/**
+ * The Phases tab in Relationship view: not folders -- the build lineage
+ * `phaseRelations()` already works out for a Phase's own menu (see
+ * `phaseMenu`), drawn here for all of them at once rather than one at a
+ * time. Phases sharing an upstream image this app has no record of -- the
+ * base image, or a fork whose source Phase no longer exists -- are grouped
+ * under it as a plain label, not a Phase of its own; everything else nests
+ * under whatever it was built on or forked from.
+ */
+function phaseRelationRows(p, info) {
+  const groupKey = phaseGroupKeyFor(p);
+  const { note, list, empty } = phaseListOrNote(info);
+  if (note && empty) return [note, ...phaseAddTrailer(p, groupKey, [], { first: true, folders: false })];
+  if (note) return [note];
+
+  const asHost = (ph) => ({ kind: 'phase', id: `phase:${p.proxy}:${ph.name}`, name: ph.name, labels: {}, ph, profile: p });
+  const relOf = new Map(list.map((ph) => [ph.name, phaseRelations(p.proxy, ph.name)]));
+  const childNames = new Set();
+  for (const rel of relOf.values()) for (const c of rel.children) childNames.add(c.name);
+  const roots = list.filter((ph) => !childNames.has(ph.name));
+
+  const byBase = new Map();
+  for (const ph of roots) {
+    const chain = relOf.get(ph.name)?.chain || [];
+    const base = chain[0] && (chain[0].base || chain[0].gone) ? chain[0].name : '';
+    if (!byBase.has(base)) byBase.set(base, []);
+    byBase.get(base).push(ph);
+  }
+
+  const rows = [];
+  /*
+   * Open and shut, like folders: ▼ on anything with Phases under it, and
+   * what was shut stays shut (kept per cluster, by name).
+   */
+  const shutKey = (name) => `${p.proxy}|${name}`;
+  const shut = new Set(state.settings.phaseRelShut || []);
+  const toggle = async (name) => {
+    const next = new Set(state.settings.phaseRelShut || []);
+    if (next.has(shutKey(name))) next.delete(shutKey(name)); else next.add(shutKey(name));
+    state.settings = await window.api.settings.set({ phaseRelShut: [...next] });
+    renderSidebar();
+  };
+  const chev = (name, count) => {
+    if (!count) return el('span', { class: 'chev' });
+    const isShut = shut.has(shutKey(name));
+    const c = el('span', {
+      class: 'chev', text: isShut ? '\u25B6' : '\u25BC',
+      title: isShut ? `Show the ${count} built on it` : 'Hide what was built on it',
+      onClick: (e) => { e.stopPropagation(); toggle(name); },
+    });
+    c.addEventListener('dblclick', (e) => e.stopPropagation());
+    return c;
+  };
+  const kidsOf = (ph) => (relOf.get(ph.name)?.children || []).filter((c) => list.some((x) => x.name === c.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  /*
+   * Each Phase is drawn once. The lineage comes from this app's own build
+   * history, which can loop — a name deleted and reused for a Phase built
+   * on its old namesake's child — and following a loop never ends.
+   */
+  const drawn = new Set();
+  // Everything under a shut one: counted, and kept out of the loop catch-all below.
+  const hideUnder = (ph) => {
+    let n = 0;
+    for (const c of kidsOf(ph)) {
+      if (drawn.has(c.name)) continue;
+      drawn.add(c.name);
+      n += 1 + hideUnder(c);
+    }
+    return n;
+  };
+  const draw = (ph, depth, from = null) => {
+    if (drawn.has(ph.name)) return;
+    drawn.add(ph.name);
+    // Under its base image's label, the base image again is only noise.
+    const via = from ? `${ph.how === 'fork' ? '\u2442 fork of' : 'on'} ${from}` : (depth ? '' : null);
+    const kids = kidsOf(ph).filter((c) => !drawn.has(c.name));
+    const row = phaseRow(asHost(ph), groupKey, { depth, via });
+    row.prepend(chev(ph.name, kids.length));
+    rows.push(row);
+    if (shut.has(shutKey(ph.name))) {
+      const n = hideUnder(ph);
+      if (n) row.querySelector('.name')?.after(el('span', { class: 'count', text: `+${n}` }));
+      return;
+    }
+    for (const c of kids) draw(c, depth + 1, ph.name);
+  };
+  for (const [base, bases] of [...byBase.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const sorted = [...bases].sort((a, b) => a.name.localeCompare(b.name));
+    if (base) {
+      const isShut = shut.has(shutKey('base:' + base));
+      const label = el('div', {
+        class: 'sb-item phase-row phase-base', style: '--depth:0',
+        title: 'Not one of your Phases — the image these were built on',
+        onClick: () => toggle('base:' + base),
+      },
+        el('span', { class: 'chev', text: isShut ? '\u25B6' : '\u25BC' }),
+        el('span', { class: 'name', text: base }),
+        isShut ? el('span', { class: 'count', text: String(sorted.length) }) : null);
+      rows.push(label);
+      if (isShut) {
+        for (const ph of sorted) { if (!drawn.has(ph.name)) { drawn.add(ph.name); hideUnder(ph); } }
+        continue;
+      }
+    }
+    for (const ph of sorted) draw(ph, base ? 1 : 0);
+  }
+  // A loop has no top to hang from: whatever it left out is still listed.
+  for (const ph of [...list].sort((a, b) => a.name.localeCompare(b.name))) draw(ph, 0);
+  rows.push(...phaseAddTrailer(p, groupKey, [], { folders: false }));
   return rows;
 }
 

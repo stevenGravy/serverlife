@@ -50,8 +50,63 @@ import { modal, field, textInput, select, toast, status, iconPicker, colorPicker
 export function hostKey(host) {
   if (!host) return '';
   if (host.uuid) return 'uuid:' + host.uuid;
+  if (host.kind === 'kube' && host.groupKey && host.name) return `kube:${host.groupKey}:${host.name}`;
   if (host.type === 'teleport' && host.name) return `tsh:${host.cluster || ''}:${host.name}`;
   return host.id || (host.alias ? 'ssh:' + host.alias : '');
+}
+
+/*
+ * A Kubernetes cluster used to be keyed by its row's id — the context's id
+ * once logged in, `avail:…` before — so a cluster watched, coloured or filed
+ * under one came back bare as the other, and every one of those settings was
+ * written under the old ids. Each is moved to the cluster's key the first
+ * time its row is drawn. Exact matches only, and an entry already under the
+ * new key wins: nothing is overwritten.
+ */
+const migratedKube = new Set();
+
+function renameKey(v, from, to) {
+  if (Array.isArray(v)) {
+    if (!v.includes(from)) return v;
+    return v.includes(to) ? v.filter((x) => x !== from) : v.map((x) => (x === from ? to : x));
+  }
+  if (!v || typeof v !== 'object') return v;
+  let out = v;
+  const copy = () => { if (out === v) out = { ...v }; };
+  if (Object.hasOwn(v, from)) {
+    copy();
+    if (!Object.hasOwn(v, to)) {
+      const moved = v[from];
+      out[to] = moved && typeof moved === 'object' && moved.key === from ? { ...moved, key: to } : moved;
+    }
+    delete out[from];
+  }
+  for (const k of Object.keys(out)) {
+    const next = renameKey(out[k], from, to);
+    if (next !== out[k]) { copy(); out[k] = next; }
+  }
+  return out;
+}
+
+export function migrateKubeHostKeys(hosts) {
+  const pairs = [];
+  for (const h of hosts || []) {
+    if (h?.kind !== 'kube' || !h.id) continue;
+    const to = hostKey(h);
+    if (to === h.id || migratedKube.has(h.id)) continue;
+    migratedKube.add(h.id);
+    pairs.push([h.id, to]);
+  }
+  if (!pairs.length || !state.settings) return;
+  const patch = {};
+  for (const [name, value] of Object.entries(state.settings)) {
+    if (name === 'phaseJournal' || !value || typeof value !== 'object') continue;
+    let next = value;
+    for (const [from, to] of pairs) next = renameKey(next, from, to);
+    if (next !== value) patch[name] = next;
+  }
+  if (!Object.keys(patch).length) return;
+  window.api.settings.set(patch).then((s) => { if (s) state.settings = s; }).catch(() => {});
 }
 
 /**
