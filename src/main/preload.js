@@ -227,6 +227,9 @@ contextBridge.exposeInMainWorld('api', {
     // { command, args, env } for localTerm.open() — a kube exec session is
     // opened as a local-shell pane running kubectl, not a Connection.
     execSpec: (opts) => call('kube:execSpec', opts),
+    // A single non-interactive command in a pod — { ok, stdout, stderr, error },
+    // not a pty. See kube.execRun.
+    exec: (opts) => call('kube:exec', opts),
     // Same shape, for attaching to an already-running container instead of
     // starting a new shell in it, and for an ephemeral debug container.
     attachSpec: (opts) => call('kube:attachSpec', opts),

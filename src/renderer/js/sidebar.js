@@ -773,6 +773,8 @@ export async function openSshConfigDialog() {
 export function hostPrefKey(host) {
   if (!host) return '';
   if (host.uuid) return 'uuid:' + host.uuid;
+  // Kept in step with folders.js's hostKey(): the Teleport cluster's name when there is one.
+  if (host.kind === 'kube' && host.teleportCluster && host.name) return `kube:${host.teleportCluster}:${host.name}`;
   if (host.kind === 'kube' && host.groupKey && host.name) return `kube:${host.groupKey}:${host.name}`;
   if (host.type === 'teleport' && host.name) return `tsh:${host.cluster || ''}:${host.name}`;
   return host.id || (host.alias ? 'ssh:' + host.alias : '');

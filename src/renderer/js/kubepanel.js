@@ -1,4 +1,4 @@
-import { el, clear, clickOrDblClick } from './util.js';
+import { el, clear, clickOrDblClick, fmtDuration } from './util.js';
 import { state } from './state.js';
 import { toast, contextMenu, modal, select, textInput, field, checkbox, confirm, prompt } from './ui.js';
 import { openLocalShell, splitActivePane, refreshPaneTitles } from './sessions.js';
@@ -24,9 +24,11 @@ async function sidebarHelpers() {
 // summary yet, corrected on the very next redraw.
 let labelSummaryFn = null;
 let showRequestableInFn = null;
+let isMfaHostFn = null;
 import('./sidebar.js').then((m) => {
   labelSummaryFn = m.labelSummary;
   showRequestableInFn = m.showRequestableIn;
+  isMfaHostFn = m.isMfaHost;
   state.emit('kubeContexts');
 }).catch(() => {});
 
@@ -67,7 +69,7 @@ function ensureLoaded() {
       .filter((p) => !p.expired && p.validUntil && Date.parse(p.validUntil) > Date.now() + 120000)
       .flatMap((p) => notYetConnected(p).map((cl) => ({
         key: teleportBeatKey(p.proxy, p.homeDir, cl.name),
-        teleport: { proxy: p.proxy, kubeCluster: cl.name, home: p.homeDir || null },
+        teleport: { proxy: p.proxy, kubeCluster: cl.name, home: p.homeDir || null, teleportCluster: p.cluster || null },
       }))),
   ], () => (state.teleportProfiles || []).filter((p) => !p.expired && p.validUntil && Date.parse(p.validUntil) > Date.now() + 120000));
   if (loaded || loading) return;
@@ -339,9 +341,32 @@ function teleportEntryFor(x) {
   return null;
 }
 
-/** The ☸ and, when known, which cloud: EKS, GKE, AKS or a local one (kubecloud.js). */
-export function kubeMarks(x) {
-  return [kubeIcon(), providerBadge(providerFor(x, teleportEntryFor(x)))];
+/*
+ * The canonical MFA-mark id for one kube cluster's row id, resolved and
+ * cached once — the same `inventoryKubeIds` round trip mfaMenuItemFor()
+ * and kubeBrowseSpec() each make, but a render has nowhere to await one,
+ * so the raw id is shown as the answer until the real one lands, then
+ * redrawn. See mfaIdFor() for why the raw id and the resolved one differ.
+ */
+const mfaIdResolved = new Map(); // raw row id -> resolved mfaHosts id
+function resolvedMfaId(id, cluster, name) {
+  if (mfaIdResolved.has(id)) return mfaIdResolved.get(id);
+  mfaIdResolved.set(id, id);
+  mfaIdFor({ id, cluster, name }).then((resolved) => {
+    if (mfaIdResolved.get(id) !== resolved) { mfaIdResolved.set(id, resolved); state.emit('kubeContexts'); }
+  }).catch(() => {});
+  return id;
+}
+
+/** The ☸, which cloud when known (kubecloud.js), and an "mfa" tag for a cluster marked as needing per-session MFA. */
+export function kubeMarks(x, mfaCluster) {
+  const name = x.kubeClusterName || x.name;
+  const cluster = mfaCluster !== undefined ? mfaCluster : x.teleportCluster;
+  const mfa = isMfaHostFn && cluster !== undefined && isMfaHostFn(resolvedMfaId(x.id, cluster, name));
+  return [
+    kubeIcon(), providerBadge(providerFor(x, teleportEntryFor(x))),
+    mfa ? el('span', { class: 'tag mfa', title: 'Requires per-session MFA', text: 'mfa' }) : null,
+  ];
 }
 
 /*
@@ -466,21 +491,21 @@ export function kubeHostsForProfile(p) {
       const found = reqFound.get(nameOf(c));
       return {
         kind: 'kube', id: c.id, name: nameOf(c), labels: found.labels || labelsForContext(c) || {},
-        groupKey, profile: p, requestable: true, noAccessContext: c,
+        groupKey, profile: p, requestable: true, noAccessContext: c, teleportCluster: c.teleportCluster || p.cluster,
         requestableInfo: { ...found, name: nameOf(c) },
       };
     }),
     ...mine.map((c) => ({
       kind: 'kube', id: c.id, name: c.kubeClusterName || c.name, labels: labelsForContext(c) || {},
-      groupKey, profile: p, kubeContext: c,
+      groupKey, profile: p, kubeContext: c, teleportCluster: c.teleportCluster || p.cluster,
     })),
     ...pending.map((cl) => ({
       kind: 'kube', id: `avail:${groupKey}:${cl.name}`, name: cl.name, labels: cl.labels || {},
-      groupKey, profile: p, availableCluster: cl,
+      groupKey, profile: p, availableCluster: cl, teleportCluster: cl.cluster || p.cluster,
     })),
     ...askable.map((h) => ({
       kind: 'kube', id: h.id, name: h.name, labels: h.labels || {},
-      groupKey, profile: p, requestable: true, requestableInfo: h,
+      groupKey, profile: p, requestable: true, requestableInfo: h, teleportCluster: p.cluster,
     })),
   ];
   migrateKubeHostKeys(hosts);
@@ -496,11 +521,12 @@ export function availableClusterRow(p, cluster, opts = {}) {
     style: 'opacity:.65' + (opts.depth ? `;--depth:${opts.depth}` : ''),
     title: `${cluster.name}\nAvailable, not yet logged in — click to tsh kube login`,
     onClick: () => connectAvailableCluster(p, cluster),
+    oncontextmenu: (e) => { e.stopPropagation(); openKubeHostMenu(e, { availableCluster: cluster, profile: p }, opts.groupKey); },
   },
     el('span', { class: 'st', style: 'background:var(--muted)' }),
     opts.watched ? el('span', { class: 'hwatch', text: '\u{1F514}', title: 'Watched — you will be told if this cluster leaves the inventory' }) : null,
     el('span', { class: 'name', text: cluster.name }),
-    ...kubeMarks(cluster),
+    ...kubeMarks(cluster, cluster.cluster || p.cluster),
     kubeBeatTag(teleportBeatKey(p.proxy, p.homeDir, cluster.name), { proxy: p.proxy, name: cluster.name }),
     labelTag(cluster.labels),
     el('span', { class: 'tag', text: busy ? 'logging in…' : 'not connected' }));
@@ -539,14 +565,29 @@ async function editContextDialog(c) {
  * openHostMenu. Same menus the sidebar rows open, so neither place grows
  * an option the other lacks.
  */
-export function openKubeHostMenu(e, host, groupKey) {
+export async function openKubeHostMenu(e, host, groupKey) {
   e.preventDefault();
   if (host.kubeContext) return openKubeContextMenu(e, host.kubeContext, groupKey);
   if (host.availableCluster) {
-    return contextMenu(e.clientX, e.clientY, [{
-      label: 'Log in (tsh kube login)',
-      onClick: () => connectAvailableCluster(host.profile, host.availableCluster),
-    }, { sep: true }, cloudMenuItem(host.availableCluster)]);
+    const cl = host.availableCluster;
+    const p = host.profile || {};
+    // `cl.cluster` (tsh kube ls's own `cluster_name`) is usually empty —
+    // the active profile's own is the Teleport cluster this offer came
+    // from, same as c.teleportCluster for an already-logged-in context.
+    const teleportCluster = cl.cluster || p.cluster;
+    return contextMenu(e.clientX, e.clientY, [
+      { label: 'Log in (tsh kube login)', onClick: () => connectAvailableCluster(p, cl) },
+      ...await mfaMenuItemFor({ id: cl.id, cluster: teleportCluster, name: cl.name }),
+      // `tsh proxy kube` needs no prior `tsh kube login` at all — offered
+      // here too so an MFA-marked cluster can be reached straight through
+      // a tunnel without that extra step, the same shape kubeProxyMenuItem
+      // already gives a logged-in context, shimmed from what an offer
+      // (not yet a context) actually has: no kubeClusterName of its own,
+      // no teleportProxy/teleportCluster fields either.
+      await kubeProxyMenuItem({ id: cl.id, kubeClusterName: cl.name, teleportProxy: p.proxy, teleportCluster }),
+      { sep: true },
+      cloudMenuItem(cl),
+    ]);
   }
   return null;
 }
@@ -674,7 +715,8 @@ function ensureNamespacesLoaded(c) {
   // login (or before access changed) said "No namespaces" until a Refresh.
   if (entry && Date.now() - (entry.at || 0) < AVAILABLE_RETRY_MS) return;
   namespacesCache.set(c.id, { ...(entry?.namespaces ? { namespaces: entry.namespaces } : {}), loading: true });
-  window.api.kube.namespaces(kubeSpecOf(c))
+  kubeBrowseSpec(c)
+    .then((spec) => window.api.kube.namespaces(spec))
     .then((r) => namespacesCache.set(c.id, r?.ok
       ? { namespaces: (r.namespaces || []).slice().sort(), at: Date.now() }
       : { error: r?.error || 'Could not list namespaces', at: Date.now() }))
@@ -688,7 +730,8 @@ function ensurePodsLoaded(c, ns) {
   if (entry?.loading) return;
   if (entry && Date.now() - (entry.at || 0) < AVAILABLE_RETRY_MS) return;
   podsCache.set(key, { ...(entry?.pods ? { pods: entry.pods } : {}), loading: true });
-  window.api.kube.pods({ ...kubeSpecOf(c), namespace: ns })
+  kubeBrowseSpec(c)
+    .then((spec) => window.api.kube.pods({ ...spec, namespace: ns }))
     .then((r) => podsCache.set(key, r?.ok
       ? { pods: r.pods || [], at: Date.now() }
       : { error: r?.error || 'Could not list pods', at: Date.now() }))
@@ -701,7 +744,7 @@ function toggleExpanded(c) {
   else {
     expanded.add(c.id); ensureNamespacesLoaded(c);
     // Connecting is when to ask which cloud it is — once, and only then.
-    detectOnConnect(c, kubeSpecOf(c)).catch(() => {});
+    kubeBrowseSpec(c).then((spec) => detectOnConnect(c, spec)).catch(() => {});
   }
   state.emit('kubeContexts');
 }
@@ -752,7 +795,7 @@ export function kubeContextRow(c, opts = {}) {
     el('button', {
       class: 'ghost-btn sm', text: '⤢',
       title: 'Open the full cluster browser — every resource kind, including custom ones',
-      onClick: (e) => { e.stopPropagation(); openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { contextNamespace: c.namespace || undefined, provider: kubeProviderOf(c) }); },
+      onClick: async (e) => { e.stopPropagation(); openKubeBrowser(await kubeBrowseSpec(c), c.kubeClusterName || c.name, { contextNamespace: c.namespace || undefined, provider: kubeProviderOf(c) }); },
     }))];
   if (isOpen) {
     if (mine.length) rows.push(...activeForwardRows(mine));
@@ -927,7 +970,7 @@ function podRow(c, pod) {
 }
 
 async function openPodContextMenu(e, c, pod, containers) {
-  const pfItem = await portForwardMenuItem(kubeSpecOf(c), { resource: 'pod', name: pod.name, namespace: pod.namespace });
+  const pfItem = await portForwardMenuItem(await kubeBrowseSpec(c), { resource: 'pod', name: pod.name, namespace: pod.namespace });
   contextMenu(e.clientX, e.clientY, [
     { label: pod.name, heading: true },
     // A plain click keeps the same default a left-click row already has
@@ -941,6 +984,11 @@ async function openPodContextMenu(e, c, pod, containers) {
         { label: 'Split down', onClick: () => openPodExec(c, pod, name, { dir: 'col' }) },
         { label: 'Open in a new tab', onClick: () => openPodExec(c, pod, name, { newTab: true }) },
       ],
+    })),
+    ...containers.map((name) => ({
+      label: `Run a command${name ? ` (${name})` : ''}…`,
+      title: 'One command, run once — no shell session opened',
+      onClick: () => openPodRunCommandDialog(c, pod, name),
     })),
     ...containers.map((name) => ({
       label: `View logs${name ? ` (${name})` : ''}`,
@@ -983,7 +1031,7 @@ async function openPodContextMenu(e, c, pod, containers) {
       label: 'View YAML',
       onClick: async () => {
         const target = { name: pod.name, resource: 'pods', namespace: pod.namespace };
-        const spec = kubeSpecOf(c);
+        const spec = await kubeBrowseSpec(c);
         const { textModal } = await import('./kubebrowser.js');
         const r = await window.api.kube.resourceYaml({ spec, target });
         if (!r.ok) { await textModal(`Pod/${pod.name}`, r.error || 'Could not read YAML'); return; }
@@ -1012,7 +1060,7 @@ async function openPodContextMenu(e, c, pod, containers) {
     {
       label: 'Export YAML…',
       onClick: async () => {
-        const r = await window.api.kube.resourceYaml({ spec: kubeSpecOf(c), target: { name: pod.name, resource: 'pods', namespace: pod.namespace } });
+        const r = await window.api.kube.resourceYaml({ spec: await kubeBrowseSpec(c), target: { name: pod.name, resource: 'pods', namespace: pod.namespace } });
         if (!r.ok) return toast(r.error || 'Could not read YAML', 'error');
         const saved = await window.api.dialog.saveText({ text: r.yaml, defaultPath: `pod-${pod.name}.yaml`, title: `Export Pod/${pod.name}` });
         if (saved) toast(`Saved ${saved.path}`);
@@ -1023,7 +1071,7 @@ async function openPodContextMenu(e, c, pod, containers) {
       onClick: async () => {
         const ok = await (await import('./ui.js')).confirm({ title: 'Delete pod', message: `Delete "${pod.name}"?`, confirmLabel: 'Delete', danger: true });
         if (!ok) return;
-        const r = await window.api.kube.deleteResource({ spec: kubeSpecOf(c), target: { name: pod.name, resource: 'pods', namespace: pod.namespace } });
+        const r = await window.api.kube.deleteResource({ spec: await kubeBrowseSpec(c), target: { name: pod.name, resource: 'pods', namespace: pod.namespace } });
         if (!r.ok) return toast(r.error || 'Delete failed', 'error');
         toast(`Deleted ${pod.name}`);
         podsCache.delete(nsKey(c, pod.namespace));
@@ -1178,8 +1226,20 @@ export async function reopenKubeBrowser(saved) {
   const name = saved.title || saved.spec?.kubeClusterName || saved.spec?.contextName || 'the cluster';
   const spec = await resolveKubeTarget(saved.spec || {}, `the ${name} browser`);
   if (!spec) return false;
+  /*
+   * resolveKubeTarget() hands back the plain exec-plugin context — fine
+   * for most restores, wrong for one marked as needing MFA: a reopened
+   * browser pane keeps polling every 30s (kubebrowser.js's own
+   * liveTimer/reconcileRows, plus its live watch), each one a fresh MFA
+   * ceremony on that context otherwise. Routed through kubeBrowseSpec()
+   * like a fresh "Browse full cluster…" would be, once the live context
+   * it needs for that (not just the flattened identity resolveKubeTarget
+   * returns) is found.
+   */
+  const liveContext = contexts.find((c) => c.contextName === spec.contextName);
+  const browseSpec = liveContext ? await kubeBrowseSpec(liveContext) : spec;
   const view = saved.view;
-  await openKubeBrowser(spec, saved.title || spec.kubeClusterName || spec.contextName, {
+  await openKubeBrowser(browseSpec, saved.title || spec.kubeClusterName || spec.contextName, {
     initialView: typeof view === 'string' ? view : undefined,
     initialKind: view && typeof view === 'object' ? view.kind : undefined,
     initialNamespace: saved.namespace || undefined,
@@ -1232,8 +1292,12 @@ export async function reopenKubeNode(saved, { first = true, dir = 'row' } = {}) 
 
 export async function openPodExec(c, pod, containerName, opts = {}) {
   try {
+    // On an MFA-marked cluster, both the exec session itself and the file
+    // browser beside it (same kubeSpec, below) ride the one already-
+    // approved tsh proxy kube tunnel instead of each asking on its own.
+    const browseSpec = await kubeBrowseSpec(c);
     const spec = await window.api.kube.execSpec({
-      kubeconfigPaths: c.kubeconfigPaths, contextName: c.contextName,
+      ...browseSpec,
       namespace: pod.namespace, podName: pod.name, containerName,
     });
     const title = containerName ? `${pod.name}/${containerName}` : pod.name;
@@ -1241,7 +1305,7 @@ export async function openPodExec(c, pod, containerName, opts = {}) {
     // picked for the pane up front, not raced against its own first load the
     // way reassigning .source after the fact would be.
     const kubeSpec = {
-      kubeconfigPaths: c.kubeconfigPaths, contextName: c.contextName,
+      ...browseSpec,
       namespace: pod.namespace, podName: pod.name, containerName,
     };
     const explorerSource = { kind: 'kube', connId: null, kubeSpec };
@@ -1264,6 +1328,141 @@ export async function openPodExec(c, pod, containerName, opts = {}) {
   } catch (e) {
     toast(`Could not exec into ${pod.name}: ${e?.message || e}`, 'error');
   }
+}
+
+/**
+ * Commands run in a pod through openPodRunCommandDialog, most recent
+ * first — a separate list from hostactions.js's SSH commandHistory, since a
+ * `sh -c` one-liner in a container is rarely one worth reusing against a
+ * host and vice versa.
+ */
+const MAX_KUBE_COMMAND_HISTORY = 25;
+
+function kubeCommandHistory() {
+  return state.settings.kubeCommandHistory || [];
+}
+
+async function rememberKubeCommand(cmd) {
+  const list = [cmd, ...kubeCommandHistory().filter((c) => c !== cmd)].slice(0, MAX_KUBE_COMMAND_HISTORY);
+  state.settings = await window.api.settings.set({ kubeCommandHistory: list });
+}
+
+async function clearKubeCommandHistory() {
+  state.settings = await window.api.settings.set({ kubeCommandHistory: [] });
+}
+
+/**
+ * One command in a pod, run once and shown — not a shell. `kubectl exec`
+ * with no pty, captured rather than opened as a pane: the question
+ * ("is it up", "what version") that doesn't justify a shell session,
+ * the same split hostactions.js's openRunCommandDialog draws against
+ * opening a terminal for SSH hosts.
+ */
+export async function openPodRunCommandDialog(c, pod, containerName) {
+  const cmdIn = el('textarea', {
+    style: 'width:100%;height:78px;font-family:var(--mono);font-size:12px',
+    placeholder: 'teleport version',
+    spellcheck: 'false',
+  });
+  cmdIn.value = kubeCommandHistory()[0] || '';
+  const output = el('pre', {
+    style: 'margin:0;padding:9px 11px;background:var(--panel-2);border:1px solid var(--border);'
+      + 'border-radius:var(--radius);font-family:var(--mono);font-size:11.5px;white-space:pre-wrap;'
+      + 'word-break:break-word;max-height:320px;overflow:auto;min-height:64px',
+    text: 'Output appears here.',
+  });
+  const meta = el('div', { class: 'hint', style: 'margin-top:6px' });
+  let running = false;
+  let lastOutput = '';
+
+  const run = async () => {
+    const cmd = cmdIn.value.trim();
+    if (!cmd) return toast('Enter a command', 'error');
+    if (running) return;
+    running = true;
+    rememberKubeCommand(cmd).catch(() => {});
+    output.textContent = 'Running…';
+    meta.textContent = '';
+    const t0 = Date.now();
+    const spec = await kubeBrowseSpec(c);
+    const r = await window.api.kube.exec({
+      ...spec,
+      namespace: pod.namespace, podName: pod.name, containerName, command: cmd,
+    }).catch((e) => ({ ok: false, error: e.message, stdout: '', stderr: '' }));
+    const combined = [r.stdout, r.stderr].filter((s) => s && s.trim()).join('\n\n');
+    lastOutput = r.ok ? (r.stdout || '') : (combined.trim() || r.error || 'Command failed');
+    output.textContent = lastOutput.trim() || '(no output)';
+    output.style.color = r.ok ? '' : 'var(--red)';
+    meta.textContent = r.ok
+      ? `Finished in ${fmtDuration(Date.now() - t0)} · ${(r.stdout || '').length} bytes`
+      : `Failed after ${fmtDuration(Date.now() - t0)}`;
+    running = false;
+  };
+
+  cmdIn.addEventListener('keydown', (e) => {
+    // Enter runs; Shift+Enter makes a multi-line script.
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); run(); }
+  });
+
+  await modal({
+    title: 'Run a command',
+    subtitle: containerName ? `${pod.name}/${containerName}` : pod.name,
+    width: 'min(720px, 94vw)',
+    render: (body) => {
+      const recentBtn = el('button', {
+        class: 'ghost-btn sm',
+        style: 'position:absolute;top:4px;right:4px',
+        text: 'Recent…',
+        title: 'Pick a command run here before',
+        onClick: (e) => {
+          const list = kubeCommandHistory();
+          const items = list.length
+            ? list.map((cmd) => ({
+              label: cmd.split('\n')[0].slice(0, 60) + (cmd.length > 60 || cmd.includes('\n') ? '…' : ''),
+              onClick: () => { cmdIn.value = cmd; cmdIn.focus(); },
+            }))
+            : [{ label: 'Nothing run yet', disabled: true }];
+          contextMenu(e.clientX, e.clientY, [
+            ...items,
+            { sep: true },
+            {
+              label: 'Clear history',
+              disabled: !list.length,
+              onClick: async () => { await clearKubeCommandHistory(); toast('History cleared'); },
+            },
+          ]);
+        },
+      });
+      body.append(
+        field('Command', el('div', { style: 'position:relative' }, cmdIn, recentBtn), 'Enter runs it · Shift+Enter for a new line'),
+        el('label', { style: 'font-size:11px;color:var(--muted);margin-bottom:5px;display:block', text: 'Output' }),
+        output, meta);
+      setTimeout(() => cmdIn.focus(), 40);
+    },
+    buttons: [
+      {
+        label: 'Save output…',
+        onClick: async () => {
+          if (!lastOutput) return toast('Nothing to save yet', 'info');
+          const name = containerName ? `${pod.name}-${containerName}` : pod.name;
+          const saved = await window.api.dialog.saveText({
+            text: lastOutput, defaultPath: `${name}-output.txt`, title: 'Save command output',
+          });
+          if (saved) toast(`Saved ${saved.path}`);
+        },
+      },
+      {
+        label: 'Copy output',
+        onClick: () => {
+          if (!lastOutput) return toast('Nothing to copy yet', 'info');
+          window.api.clipboard.write(lastOutput);
+          toast('Output copied');
+        },
+      },
+      { label: 'Run', class: 'primary-btn', onClick: () => run() },
+      { label: 'Close', value: null },
+    ],
+  });
 }
 
 /**
@@ -1455,13 +1654,134 @@ export async function openPodLogViewer(c, pod, containerName) {
 }
 
 /**
- * "Mark as needing MFA once granted" — the same idea requestpicker.js
- * offers while a cluster is still only requestable, reachable here too
- * once it's an actual logged-in context. Teleport-sourced only: a direct
- * kubeconfig context (no `c.cluster`) has no per-session-MFA concept to
- * mark, the same reasoning GUIDE.md § KubeLife gives for the request
- * picker's own gate.
+ * "Mark as needing MFA" / "Forget that this needs MFA" — the same toggle
+ * requestpicker.js offers while a cluster is still only requestable, and
+ * sidebar.js's own host menu offers for SSH. Whether a role demands
+ * per-session MFA for a cluster is knowable the moment it is *offered*
+ * (`tsh kube ls`) — nothing about it waits on a first `tsh kube login` —
+ * so this is reachable for a cluster already in the kubeconfig (`c.cluster`
+ * set, via openKubeContextMenu) and for one only offered so far
+ * (`availableCluster`, via openKubeHostMenu), the same way either one. Only
+ * a direct kubeconfig context, with no Teleport cluster behind it at all,
+ * has nothing here to mark.
  */
+/**
+ * The id a cluster's MFA mark is actually stored under — not necessarily
+ * `id` itself: see mfaMenuItemFor's own note on `inventoryKubeIds`. Shared
+ * by the toggle below and by kubeBrowseSpec(), which needs the same
+ * answer to decide whether browsing this cluster should go through a
+ * `tsh proxy kube` tunnel instead of this app's own kubeconfig context.
+ */
+async function mfaIdFor({ id, cluster, name }) {
+  try {
+    // The real Teleport cluster name — not a kubeconfig context's own
+    // `cluster` field, which (in a context tsh wrote) is just the
+    // context's own name again, not the Teleport cluster's.
+    const ids = await window.api.teleport.inventoryKubeIds({ items: [{ id, cluster, name }] });
+    return ids[id] || id;
+  } catch { return id; } // falls back to id, which just will not match anything already marked
+}
+
+async function mfaMenuItemFor({ id, cluster, name }) {
+  const { isMfaHost, setMfaHost } = await sidebarHelpers();
+  const mfaId = await mfaIdFor({ id, cluster, name });
+  const on = isMfaHost(mfaId);
+  const items = [{
+    label: on ? 'Forget that this needs MFA' : 'Mark as needing MFA',
+    onClick: () => setMfaHost({ id: mfaId, name }, !on).then(() => state.emit('kubeContexts')),
+  }];
+  /*
+   * "Disconnect" for the tsh proxy kube tunnel kubeBrowseSpec() started
+   * while browsing this cluster — the same proxy kubeProxyMenuItem()'s
+   * own submenu can stop, surfaced here too since this (not a menu item
+   * named after a feature nobody asked to start) is where someone would
+   * think to look for "stop asking this cluster through a tunnel."
+   * Checked by `id`, not `mfaId`: a running proxy is keyed by the row's
+   * own id (see kubeBrowseSpec's proxyStart call), which only ever
+   * applies to an already-logged-in context — an availableCluster's id
+   * never has one running under it, so this is a no-op there.
+   */
+  if (on) {
+    const info = await window.api.kube.proxyStatus({ id }).catch(() => null);
+    if (info?.info) {
+      items.push({
+        label: 'Disconnect (stop tsh proxy kube)',
+        title: 'Ends the tunnel this cluster has been browsing through — the next browse approves MFA again',
+        onClick: async () => {
+          await window.api.kube.proxyStop({ id });
+          toast(`Disconnected ${name}`);
+          state.emit('kubeContexts');
+        },
+      });
+    }
+  }
+  return items;
+}
+
+/**
+ * The spec to open the full cluster browser (or any other kube.js IPC
+ * call) with — the normal kubeconfig context, unless this cluster is
+ * marked as needing MFA, in which case a `tsh proxy kube` tunnel is
+ * started (or reused) and its own single-context kubeconfig is handed
+ * back instead.
+ *
+ * The browser's many back-to-back calls (pods, namespaces, every resource
+ * kind on a view switch) each go through kubectlArgsFor()'s exec-plugin
+ * context otherwise — on a per-session-MFA role that is a fresh `tsh kube
+ * credentials` ceremony, and a fresh prompt, every single one of them.
+ * One proxy, dialled once up front, serves the whole pane off the one
+ * approval that started it — the same trade `execInteractive` makes for a
+ * single SSH command, just ahead of time here because a browser pane,
+ * unlike one exec, has no single moment to react to an MFA prompt in.
+ */
+export async function kubeBrowseSpec(c) {
+  const base = {
+    // Carried along even when nothing here starts a proxy, so a spec
+    // that later needs one restarted (reviveKubeProxySpec, below) always
+    // has what that takes — id is the one field kubeSpecOf() itself
+    // never carries, since it names a pane's own IPC spec, not a row.
+    id: c.id, teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null,
+  };
+  if (c.source !== 'teleport' || !c.cluster) return { ...kubeSpecOf(c), ...base };
+  const { isMfaHost } = await sidebarHelpers();
+  const mfaId = await mfaIdFor({ id: c.id, cluster: c.teleportCluster, name: c.kubeClusterName || c.name });
+  if (!isMfaHost(mfaId)) return { ...kubeSpecOf(c), ...base };
+  const r = await window.api.kube.proxyStart({
+    id: c.id, kubeClusterName: c.kubeClusterName || c.name, proxy: c.teleportProxy, teleportCluster: c.teleportCluster,
+  }).catch((e) => ({ ok: false, error: e.message }));
+  if (!r.ok) {
+    toast(r.error || 'Could not start tsh proxy kube — browsing over the usual connection instead', 'error');
+    return { ...kubeSpecOf(c), ...base };
+  }
+  // No contextName: the proxy's own kubeconfig has exactly one context,
+  // already current — kubectlArgsFor() adds no --context= when none is given.
+  return { kubeconfigPaths: [r.kubeconfig], viaProxy: true, ...base };
+}
+
+/**
+ * Restart the tunnel a `viaProxy` spec was browsing through — for a pane
+ * left open after "Disconnect" stopped it (or the tsh process just died
+ * on its own) that then asks to refresh. A no-op, returning the same
+ * spec, for anything not already riding a proxy: that path either never
+ * needed one or already couldn't start one, and a plain refresh failing
+ * there is the usual kind, not this one.
+ */
+export async function reviveKubeProxySpec(kubeSpec) {
+  if (!kubeSpec?.viaProxy || !kubeSpec.id) return kubeSpec;
+  const info = await window.api.kube.proxyStatus({ id: kubeSpec.id }).catch(() => null);
+  if (info?.info) return { ...kubeSpec, kubeconfigPaths: [info.info.kubeconfig] }; // already running — e.g. another pane's refresh beat this one to it
+  const r = await window.api.kube.proxyStart({
+    id: kubeSpec.id, kubeClusterName: kubeSpec.kubeClusterName, proxy: kubeSpec.teleportProxy, teleportCluster: kubeSpec.teleportCluster,
+  }).catch((e) => ({ ok: false, error: e.message }));
+  if (!r.ok) { toast(r.error || 'Could not restart tsh proxy kube', 'error'); return kubeSpec; }
+  return { ...kubeSpec, kubeconfigPaths: [r.kubeconfig] };
+}
+
+/** Does this look like what a kubectl call says when the local tsh proxy kube it was pointed at is no longer listening? */
+export function looksLikeDeadProxy(error) {
+  return /connection refused|ECONNREFUSED|EOF|no route to host/i.test(String(error || ''));
+}
+
 async function openKubeContextMenu(e, c, groupKey) {
   const items = [
     // Namespaces and pods are read once and kept; this drops this context's
@@ -1495,7 +1815,7 @@ async function openKubeContextMenu(e, c, groupKey) {
     {
       label: 'Browse full cluster…',
       title: 'Every resource kind, including custom ones',
-      onClick: () => openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { contextNamespace: c.namespace || undefined }),
+      onClick: async () => openKubeBrowser(await kubeBrowseSpec(c), c.kubeClusterName || c.name, { contextNamespace: c.namespace || undefined }),
     },
     // For a role that can use one namespace but not list them: there is
     // nothing in the browser's dropdown to pick, so name it on the way in.
@@ -1504,13 +1824,13 @@ async function openKubeContextMenu(e, c, groupKey) {
       title: 'Type the namespace to open the browser in — for when your role cannot list namespaces',
       onClick: async () => {
         const ns = await askNamespace(c.contextName, { value: c.namespace || '' });
-        if (ns) openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { initialNamespace: ns, contextNamespace: c.namespace || undefined });
+        if (ns) openKubeBrowser(await kubeBrowseSpec(c), c.kubeClusterName || c.name, { initialNamespace: ns, contextNamespace: c.namespace || undefined });
       },
     },
     {
       label: 'Manage Helm releases…',
       title: 'Opens the full cluster browser straight on its Helm releases list',
-      onClick: () => openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { initialView: 'helm', contextNamespace: c.namespace || undefined }),
+      onClick: async () => openKubeBrowser(await kubeBrowseSpec(c), c.kubeClusterName || c.name, { initialView: 'helm', contextNamespace: c.namespace || undefined }),
     },
     // Same preference the file browser's 3D button already answers to —
     // this is the same "do I want 3D at all" switch, not a second one.
@@ -1520,7 +1840,7 @@ async function openKubeContextMenu(e, c, groupKey) {
     state.settings.show3dView !== false ? {
       label: 'Open 3D view…',
       title: 'Namespaces as districts, pods as buildings — click one to exec into it',
-      onClick: () => openKubeBrowser({ ...kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null }, c.kubeClusterName || c.name, { initialView: '3d', contextNamespace: c.namespace || undefined }),
+      onClick: async () => openKubeBrowser(await kubeBrowseSpec(c), c.kubeClusterName || c.name, { initialView: '3d', contextNamespace: c.namespace || undefined }),
     } : null,
     // The same "who else is in what, right now" view a Teleport SSH host's
     // own menu already offers — livesessions.js is already kind-agnostic
@@ -1591,23 +1911,7 @@ async function openKubeContextMenu(e, c, groupKey) {
   // MFA is a Teleport per-session-grant concept — a direct kubeconfig
   // context (no Teleport cluster behind it) has nothing to mark.
   if (c.source === 'teleport' && c.cluster) {
-    const { isMfaHost, setMfaHost } = await sidebarHelpers();
-    let mfaId = c.id;
-    try {
-      const ids = await window.api.teleport.inventoryKubeIds({
-        // The real Teleport cluster name (parsed from the tsh exec plugin,
-        // see teleportOriginOf() in kube.js) — not c.cluster, which is the
-        // kubeconfig's own cluster field and, in a context tsh wrote, is
-        // just the context's own name again, not the Teleport cluster's.
-        items: [{ id: c.id, cluster: c.teleportCluster, name: c.kubeClusterName || c.name }],
-      });
-      mfaId = ids[c.id] || c.id;
-    } catch { /* falls back to c.id, which just will not match anything already marked */ }
-    const on = isMfaHost(mfaId);
-    items.push({
-      label: on ? 'Forget that this needs MFA' : 'Mark as needing MFA',
-      onClick: () => setMfaHost({ id: mfaId, name: c.kubeClusterName || c.name }, !on).then(() => state.emit('kubeContexts')),
-    });
+    items.push(...await mfaMenuItemFor({ id: c.id, cluster: c.teleportCluster, name: c.kubeClusterName || c.name }));
   }
   // The same watch SSH hosts already have — isWatched/toggleWatch are
   // already host-shaped (keyed by hostKey(), which falls back to .id for
@@ -1617,6 +1921,7 @@ async function openKubeContextMenu(e, c, groupKey) {
   {
     const watchHost = {
       id: c.id, name: c.kubeClusterName || c.name, labels: labelsForContext(c) || {},
+      teleportCluster: c.teleportCluster,
       ...(groupKey ? { kind: 'kube', groupKey } : {}),
     };
     const watching = isWatched(watchHost);
@@ -1848,7 +2153,7 @@ async function kubeProxyMenuItem(c) {
   if (!info) {
     return {
       label: 'Start tsh proxy kube…',
-      title: 'A local proxy for plain kubectl or an external tool — not what this app itself uses to reach the cluster',
+      title: 'A local proxy for plain kubectl or an external tool — also what this app itself uses to browse a cluster marked as needing MFA',
       onClick: async () => {
         const r = await window.api.kube.proxyStart({
           id: c.id, kubeClusterName: c.kubeClusterName || c.name, proxy: c.teleportProxy, teleportCluster: c.teleportCluster,
@@ -1882,11 +2187,19 @@ async function kubeProxyMenuItem(c) {
  * Connection behind it" shape as a pod exec session (see openPodExec).
  */
 async function openEcosystemShell(c, tool) {
+  // On a per-session-MFA cluster, k9s (or anything else run here) would
+  // otherwise make its own many separate kubectl-equivalent calls straight
+  // through the exec-plugin kubeconfig, each its own MFA ceremony — the
+  // same reason kubeBrowseSpec() exists for the browser pane.
+  const spec = await kubeBrowseSpec(c);
   // The platform's own path delimiter belongs on the main side, which is
   // why this asks kube.js for the env rather than joining kubeconfigPaths
   // here — the renderer has no path.delimiter to reach for.
-  const env = await window.api.kube.kubeconfigEnv(kubeSpecOf(c));
+  const env = await window.api.kube.kubeconfigEnv(spec);
   const title = tool ? `${tool}: ${c.kubeClusterName || c.name}` : `shell: ${c.kubeClusterName || c.name}`;
+  // The proxy's own kubeconfig has exactly one context, already current —
+  // naming the original context there would just fail to match.
+  const contextArgs = spec.viaProxy ? [] : ['--context=' + c.contextName];
   if (tool) {
     // The bare name resolves through PATH only if the tool happens to
     // live beside kubectl (the common case, not a guarantee) — the real
@@ -1895,7 +2208,7 @@ async function openEcosystemShell(c, tool) {
     // TUI also has no use for a file browser of this machine beside it.
     let command = tool;
     try { command = (await window.api.kube.ecosystemStatus())?.[tool]?.path || tool; } catch { /* falls back to the bare name */ }
-    await openLocalShell(null, { command, args: ['--context=' + c.contextName], env, title, explorer: false });
+    await openLocalShell(null, { command, args: contextArgs, env, title, explorer: false });
     return;
   }
   // A plain shell still needs --context honoured by whatever is typed into
@@ -1906,7 +2219,9 @@ async function openEcosystemShell(c, tool) {
   // override for that either. Simplest honest answer: name it in the title
   // and leave `--context=` to be typed, the same as a fresh terminal would.
   await openLocalShell(null, { env, title });
-  toast(`KUBECONFIG set — add --context=${c.contextName} to kubectl/helm commands here`, 'info');
+  toast(spec.viaProxy
+    ? 'KUBECONFIG set to the tsh proxy kube tunnel — already the only context in it'
+    : `KUBECONFIG set — add --context=${c.contextName} to kubectl/helm commands here`, 'info');
 }
 
 /** A file picker, appending to settings.kubeconfigPaths — kube.contexts() already reads every path there as `extraPaths`, so adding one just means picking it and saving it. */

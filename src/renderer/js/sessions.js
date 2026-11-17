@@ -399,65 +399,92 @@ async function confirmLoginNeeded(conn) {
   return ok === true;
 }
 
+/*
+ * One login ceremony per cluster at a time, however many callers are
+ * racing it — a split, a tmux heal and a kube browse can all notice the
+ * same lapsed cluster in the same instant. Each used to run its own
+ * `doLogin()`, because none of them had set `recentRelogins` yet when the
+ * next one checked, so a single lapse could open several browser tabs or
+ * fire several Touch ID / MFA prompts for what is really one login. Every
+ * concurrent caller now awaits the one attempt the first of them started
+ * instead.
+ */
+const loginInFlight = new Map(); // reloginKey -> Promise<{ loggedInAt: number|null }>
+
 async function ensureLoggedIn(conn, { background = false } = {}) {
   if (conn?.type !== 'teleport' || !conn.proxy) return;
   const key = reloginKey(conn);
-  let loggedInAt = recentRelogins.get(key);
-
-  if (!loggedInAt || Date.now() - loggedInAt >= RELOGIN_TRUST_MS) {
-    const { proxyAddress, doLogin, wasLoggedOutDeliberately } = await import('./teleportpanel.js');
-    if (background && wasLoggedOutDeliberately(conn.proxy, conn.home)) return;
-    /*
-     * A fresh read, not `state.teleportProfiles` — that is only as current
-     * as the last `refreshInventory()`, which can be tens of seconds stale
-     * (the poll interval, or simply the time since the sidebar last asked).
-     * A cluster logged into since then — by hand in a terminal, by another
-     * ServerLife window, by `tsh`'s own silent cert renewal — still reads
-     * `expired` from that stale copy, and this ran `doLogin` anyway: a
-     * needless login box, and on an SSO cluster a browser window that did
-     * not need to open. `teleport.status` is a local read, cheap enough to
-     * run right before the decision it is actually for.
-     */
-    const fresh = await window.api.teleport.status().catch(() => null);
-    const profiles = fresh?.profiles || state.teleportProfiles || [];
-    /*
-     * `p.home`, not `p.homeDir`: `home` is null-normalized for the default
-     * tsh home the same way `conn.home` is, where `homeDir` is always the
-     * real directory, default home included — comparing against that one
-     * never matched a default-home cluster, so this always fell through to
-     * `doLogin` below, however recently (or never) the cluster had in fact
-     * logged out.
-     */
-    const prof = profiles.find((p) => proxyAddress(p.proxy) === proxyAddress(conn.proxy)
-      && (p.home || null) === (conn.home || null));
-    if (prof && !prof.expired) return; // already logged in, and not by anything here — nothing to settle
-    /*
-     * The background heal never reaches here at all: this entire block is
-     * skipped for it whenever the cluster was logged out on purpose, and
-     * a background wake that still needs a fresh login is rare enough
-     * (an unattended first connect) that asking it to interrupt with a
-     * popup nobody is there to answer would be the wrong trade. Everyone
-     * else gets asked first.
-     */
-    if (!background && !(await confirmLoginNeeded(conn))) {
-      throw new Error(`Login cancelled — ${conn.cluster || conn.proxy} needs a fresh login to connect`);
-    }
-    /*
-     * Awaited to completion, not just to the login starting: for a local
-     * or passwordless login this opened a terminal tab and waits out
-     * whatever ran in it (`doLogin`, `runLoginInShell`) — a password
-     * typed back, a security key tapped — before this resolves at all.
-     * The connect below only ever runs once that has actually happened,
-     * which is the whole point of doing it here first rather than
-     * reacting to a failed connect afterward.
-     */
-    if (!(await doLogin({ proxy: conn.proxy, cluster: conn.cluster, homeDir: conn.home || null }))) return;
-    loggedInAt = Date.now();
-    recentRelogins.set(key, loggedInAt);
+  const loggedInAt = recentRelogins.get(key);
+  if (loggedInAt && Date.now() - loggedInAt < RELOGIN_TRUST_MS) {
+    const remaining = MIN_SETTLE_SINCE_LOGIN_MS - (Date.now() - loggedInAt);
+    if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+    return;
   }
 
-  const remaining = MIN_SETTLE_SINCE_LOGIN_MS - (Date.now() - loggedInAt);
+  let inFlight = loginInFlight.get(key);
+  if (!inFlight) {
+    inFlight = relogin(conn, { background }).finally(() => loginInFlight.delete(key));
+    loginInFlight.set(key, inFlight);
+  }
+  const result = await inFlight;
+  if (!result.loggedInAt) return;
+  const remaining = MIN_SETTLE_SINCE_LOGIN_MS - (Date.now() - result.loggedInAt);
   if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+}
+
+/** The actual login ceremony for one lapsed cluster — shared by every caller racing it via ensureLoggedIn's loginInFlight dedup above. */
+async function relogin(conn, { background }) {
+  const key = reloginKey(conn);
+  const { proxyAddress, doLogin, wasLoggedOutDeliberately } = await import('./teleportpanel.js');
+  if (background && wasLoggedOutDeliberately(conn.proxy, conn.home)) return { loggedInAt: null };
+  /*
+   * A fresh read, not `state.teleportProfiles` — that is only as current
+   * as the last `refreshInventory()`, which can be tens of seconds stale
+   * (the poll interval, or simply the time since the sidebar last asked).
+   * A cluster logged into since then — by hand in a terminal, by another
+   * ServerLife window, by `tsh`'s own silent cert renewal — still reads
+   * `expired` from that stale copy, and this ran `doLogin` anyway: a
+   * needless login box, and on an SSO cluster a browser window that did
+   * not need to open. `teleport.status` is a local read, cheap enough to
+   * run right before the decision it is actually for.
+   */
+  const fresh = await window.api.teleport.status().catch(() => null);
+  const profiles = fresh?.profiles || state.teleportProfiles || [];
+  /*
+   * `p.home`, not `p.homeDir`: `home` is null-normalized for the default
+   * tsh home the same way `conn.home` is, where `homeDir` is always the
+   * real directory, default home included — comparing against that one
+   * never matched a default-home cluster, so this always fell through to
+   * `doLogin` below, however recently (or never) the cluster had in fact
+   * logged out.
+   */
+  const prof = profiles.find((p) => proxyAddress(p.proxy) === proxyAddress(conn.proxy)
+    && (p.home || null) === (conn.home || null));
+  if (prof && !prof.expired) return { loggedInAt: null }; // already logged in, and not by anything here — nothing to settle
+  /*
+   * The background heal never reaches here at all: this entire block is
+   * skipped for it whenever the cluster was logged out on purpose, and
+   * a background wake that still needs a fresh login is rare enough
+   * (an unattended first connect) that asking it to interrupt with a
+   * popup nobody is there to answer would be the wrong trade. Everyone
+   * else gets asked first.
+   */
+  if (!background && !(await confirmLoginNeeded(conn))) {
+    throw new Error(`Login cancelled — ${conn.cluster || conn.proxy} needs a fresh login to connect`);
+  }
+  /*
+   * Awaited to completion, not just to the login starting: for a local
+   * or passwordless login this opened a terminal tab and waits out
+   * whatever ran in it (`doLogin`, `runLoginInShell`) — a password
+   * typed back, a security key tapped — before this resolves at all.
+   * The connect below only ever runs once that has actually happened,
+   * which is the whole point of doing it here first rather than
+   * reacting to a failed connect afterward.
+   */
+  if (!(await doLogin({ proxy: conn.proxy, cluster: conn.cluster, homeDir: conn.home || null }))) return { loggedInAt: null };
+  const loggedInAt = Date.now();
+  recentRelogins.set(key, loggedInAt);
+  return { loggedInAt };
 }
 
 /**
@@ -488,6 +515,17 @@ export async function connectWithRelogin(connId, { background = false } = {}) {
     return await window.api.conn.connect(connId);
   } catch (e) {
     if (!/ \[mfa\]$/.test(e.message) || conn?.type !== 'teleport' || !conn.proxy) throw e;
+    /*
+     * A host already known to need per-session MFA will fail this same
+     * non-interactive transport identically every time — retrying just
+     * burns attempts (and, behind a hardware key, re-prompts it several
+     * times over) for a result already known. Only a host not yet marked
+     * this way gets the "maybe it just isn't reachable yet" retries below.
+     */
+    if (conn.hostId) {
+      const { isMfaHost } = await import('./sidebar.js');
+      if (isMfaHost(conn.hostId)) throw e;
+    }
     let lastErr = e;
     for (const waitMs of CONNECT_SETTLE_DELAYS_MS) {
       await new Promise((resolve) => setTimeout(resolve, waitMs));

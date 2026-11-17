@@ -11,6 +11,44 @@ tagged `v<version>`.
 
 ---
 
+## [0.39.0] — 2026-11-17
+
+Kubernetes clusters that need per-session MFA can be browsed off one
+approval, a pod can be asked one command without opening a shell, and a
+lapsed login asks once however many things notice it.
+
+### Added
+
+- **Run a command in a pod** — *Run a command…* on a pod, from the sidebar or
+  the cluster browser: one `kubectl exec`, no shell opened, the output shown
+  with Copy and Save, and the commands you ran kept under *Recent…*.
+- **A cluster marked as needing MFA is browsed through `tsh proxy kube`** —
+  one approval for the whole browser, its exec sessions, its file browser and
+  k9s, instead of a prompt for every read. *Disconnect* on its menu ends the
+  tunnel, and Refresh starts it again. An `mfa` tag marks such a cluster, and
+  a cluster only offered so far can be marked too.
+
+### Changed
+
+- **A cluster marked as needing MFA gets no background heartbeat**: asking
+  would have meant an MFA prompt nobody is there to answer, every minute.
+- **The cluster browser's toolbar** wraps on a narrow pane, with an icon on
+  each button and *+ New* as the main one.
+- **A Kubernetes cluster's settings are keyed by its Teleport cluster's name**
+  — tsh writes a proxy address differently across logins — and move over by
+  themselves.
+
+### Fixed
+
+- **One login at a time**: a split, a tmux reconnect and a cluster browse
+  noticing the same lapsed login together opened one login, not one each.
+- **Several `tsh proxy kube` starts for one cluster** at once — each with its
+  own MFA prompt — now share the first.
+- **`tsh proxy kube` and the other helpers are stopped** when ServerLife is
+  ended with `kill` or Ctrl-C, not only when quit from the menu.
+
+---
+
 ## [0.38.1] — 2026-11-15
 
 Phases in Folders, a List or a Relationships tree; tmux and shells on beams

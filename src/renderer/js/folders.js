@@ -50,6 +50,19 @@ import { modal, field, textInput, select, toast, status, iconPicker, colorPicker
 export function hostKey(host) {
   if (!host) return '';
   if (host.uuid) return 'uuid:' + host.uuid;
+  /*
+   * The Teleport cluster's own name, not the profile's groupKey — a
+   * kube cluster watched (or filed, or coloured) under one came back
+   * unwatched under the other, because groupKey is keyed off the
+   * profile's own proxy string (groupKeyFor(), folders.js), and tsh
+   * writes that string differently across logins — with or without
+   * :443, with or without a scheme. The Teleport cluster's name is what
+   * actually identifies it, the same fact mfaIdFor()'s own id formula
+   * (kubepanel.js) already keys on for exactly this reason.
+   */
+  if (host.kind === 'kube' && host.teleportCluster && host.name) return `kube:${host.teleportCluster}:${host.name}`;
+  // A direct (non-Teleport) kubeconfig context has no cluster name to be
+  // stable about — groupKey (its own profile key) is the best there is.
   if (host.kind === 'kube' && host.groupKey && host.name) return `kube:${host.groupKey}:${host.name}`;
   if (host.type === 'teleport' && host.name) return `tsh:${host.cluster || ''}:${host.name}`;
   return host.id || (host.alias ? 'ssh:' + host.alias : '');
@@ -93,9 +106,20 @@ export function migrateKubeHostKeys(hosts) {
   for (const h of hosts || []) {
     if (h?.kind !== 'kube' || !h.id) continue;
     const to = hostKey(h);
-    if (to === h.id || migratedKube.has(h.id)) continue;
-    migratedKube.add(h.id);
-    pairs.push([h.id, to]);
+    /*
+     * Two legacy forms to move off of: the row's own raw id (the
+     * original problem this function was written for), and — now that
+     * hostKey() prefers teleportCluster over groupKey for exactly the
+     * instability groupKey has — whatever the groupKey-based key used
+     * to be, if this host has a teleportCluster to have changed it.
+     */
+    const legacy = [h.id, h.groupKey && h.name ? `kube:${h.groupKey}:${h.name}` : null]
+      .filter((from) => from && from !== to);
+    for (const from of legacy) {
+      if (migratedKube.has(from)) continue;
+      migratedKube.add(from);
+      pairs.push([from, to]);
+    }
   }
   if (!pairs.length || !state.settings) return;
   const patch = {};

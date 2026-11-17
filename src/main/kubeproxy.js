@@ -2,11 +2,13 @@
 /**
  * `tsh proxy kube` — a local proxy to a Teleport-proxied cluster's API
  * server, serving a kubeconfig any plain kubectl (or any other external
- * tool this app knows nothing about, running outside it) can point at
- * directly, with no exec plugin and no rewriting of the user's own
- * kubeconfig. KubeLife's own internal calls keep using kubectlArgsFor()'s
- * `tsh kube login`-based contexts (see kube.js) — this exists purely to
- * hand a cluster to something else.
+ * tool) can point at directly, with no exec plugin and no rewriting of
+ * the user's own kubeconfig. Originally purely for handing a cluster to
+ * something else; KubeLife's own calls now reach for this too (see
+ * kubepanel.js's kubeBrowseSpec) for a cluster marked as needing
+ * per-session MFA, where kubectlArgsFor()'s own exec-plugin context would
+ * mean a fresh MFA ceremony on every single kubectl call a browsing pane
+ * makes — one proxy, one approval, instead.
  *
  * One proxy per context, kept running until stopped or the app quits — the
  * same lifecycle `tsh proxy aws` already has in awsproxy.js, mirrored here
@@ -18,6 +20,21 @@ const teleport = require('./teleport');
 
 /** context id -> { child, info: { port, kubeconfig, kubeClusterName, startedAt } } */
 const running = new Map();
+/*
+ * context id -> Promise<info>, for a start still in flight.
+ *
+ * `running` only catches a proxy that has *already* finished starting —
+ * the window between a caller asking for one and `tsh proxy kube`
+ * actually printing its port and kubeconfig was wide open, and KubeLife's
+ * own namespace and pod reads (ensureNamespacesLoaded, ensurePodsLoaded)
+ * ask for the same cluster independently enough that several arrived
+ * inside that window every time: each one found nothing in `running` yet
+ * and spawned its own `tsh proxy kube`, each with its own MFA ceremony,
+ * for what was meant to be one proxy serving all of them. Every caller
+ * racing the same id now awaits the one attempt the first of them
+ * started instead.
+ */
+const starting = new Map();
 
 const PORT_RE = /Started local proxy for Kubernetes on [^:]+:(\d+)/;
 const KUBECONFIG_RE = /KUBECONFIG="([^"]+)"/;
@@ -26,12 +43,19 @@ const KUBECONFIG_RE = /KUBECONFIG="([^"]+)"/;
 function stripAnsi(s) { return String(s).replace(/\x1b\[[0-9;]*m/g, ''); }
 
 /** Start (or reuse) a proxy for one Teleport kube cluster context. */
-function ensure(id, { kubeClusterName, proxy, home, teleportCluster } = {}) {
+function ensure(id, opts = {}) {
   if (!id) throw new Error('No context given.');
-  if (!kubeClusterName) throw new Error('No Kubernetes cluster chosen.');
+  if (!opts.kubeClusterName) throw new Error('No Kubernetes cluster chosen.');
   const existing = running.get(id);
   if (existing && !existing.child.killed) return Promise.resolve(existing.info);
+  const inFlight = starting.get(id);
+  if (inFlight) return inFlight;
+  const p = start(id, opts).finally(() => starting.delete(id));
+  starting.set(id, p);
+  return p;
+}
 
+function start(id, { kubeClusterName, proxy, home, teleportCluster } = {}) {
   const args = [];
   if (proxy) args.push('--proxy=' + proxy);
   args.push('proxy', 'kube', kubeClusterName, '--proxy-log-output=stdout');

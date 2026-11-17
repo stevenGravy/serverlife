@@ -592,15 +592,15 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
         () => listOverviewItems(`${phase} pods`, 'pods', overview.podItems.filter((p) => (p.status || 'Unknown') === phase)))),
     ) : el('div', { style: 'color:var(--muted);font-size:12px', text: overviewError || 'Loading cluster overview…' });
 
-    return el('div', { style: 'display:flex;align-items:center;gap:16px;padding:2px 2px 8px;border-bottom:1px solid var(--border-soft)' },
+    return el('div', { style: 'display:flex;align-items:center;flex-wrap:wrap;gap:16px;padding:2px 2px 8px;border-bottom:1px solid var(--border-soft)' },
       el('div', { style: 'display:flex;align-items:center;gap:6px;position:relative' },
         el('span', { style: 'color:var(--muted);font-size:12px', text: 'Namespace' }), nsSel, nsBtn, nsMenu),
       el('div', { style: 'display:flex;align-items:center;gap:6px' },
         el('span', { style: 'color:var(--muted);font-size:12px', text: 'Labels' }), labelSelectorInputEl),
       stats,
-      el('div', { style: 'margin-left:auto;display:flex;gap:6px' },
+      el('div', { style: 'margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px' },
         el('button', {
-          class: 'ghost-btn sm', text: '+ New',
+          class: 'primary-btn sm', text: '+ New',
           title: 'Apply a YAML manifest, or a quick namespace/pod without writing one by hand',
           onClick: (e) => contextMenu(e.clientX, e.clientY, [
             { label: 'Apply YAML…', onClick: () => applyYamlFlow('Apply YAML') },
@@ -634,44 +634,49 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
           ]),
         }),
         forwardCount ? el('button', {
-          class: 'ghost-btn sm', text: `⇄ ${forwardCount} active`, title: 'Active port-forwards on this cluster — click to manage',
+          class: 'ghost-btn sm', title: 'Active port-forwards on this cluster — click to manage',
           onClick: async () => (await import('./kubepanel.js')).showActivePortForwards({ contextName: kubeSpec.contextName }),
-        }) : null,
+        }, el('span', { style: 'margin-right:5px;color:var(--green)' }, '⇄'), `${forwardCount} active`) : null,
         el('button', {
-          class: 'ghost-btn sm', text: 'My access', title: 'Who this cluster sees you as, your groups, and what you can do — kubectl auth can-i',
+          class: 'ghost-btn sm', title: 'Who this cluster sees you as, your groups, and what you can do — kubectl auth can-i',
           onClick: () => openAccessModal(),
-        }),
+        }, el('span', { style: 'margin-right:5px;color:var(--accent)' }, '🔑'), 'My access'),
         el('button', {
-          class: 'ghost-btn sm', text: 'Request namespace/pod access…',
+          class: 'ghost-btn sm',
           title: kubeSpec.teleportProxy
             ? 'Ask for a namespace or pod you cannot see yet here — already scoped to this cluster'
             : 'Not reached through Teleport — nothing to request here',
           disabled: !kubeSpec.teleportProxy,
           onClick: () => requestKubeResourceAccess(),
-        }),
+        }, el('span', { style: 'margin-right:5px;color:var(--amber)' }, '✉'), 'Request namespace/pod access…'),
         el('button', {
-          class: 'ghost-btn sm', text: 'Scan cluster…', title: 'A Popeye lint — misconfigurations and common risks, not a deep vulnerability scan',
+          class: 'ghost-btn sm', title: 'A Popeye lint — misconfigurations and common risks, not a deep vulnerability scan',
           onClick: () => openScanModal(),
-        }),
+        }, el('span', { style: 'margin-right:5px;color:var(--amber)' }, '🛡'), 'Scan cluster…'),
         el('button', {
-          class: 'ghost-btn sm', text: 'Search open clusters…', title: 'Look for a resource across every cluster tab already open',
+          class: 'ghost-btn sm', title: 'Look for a resource across every cluster tab already open',
           onClick: () => openCrossClusterSearch(),
-        }),
+        }, el('span', { style: 'margin-right:5px;color:var(--accent)' }, '🔍'), 'Search open clusters…'),
         el('button', {
-          class: 'ghost-btn sm', text: 'Compare…', title: 'Diff one resource between two open cluster tabs',
+          class: 'ghost-btn sm', title: 'Diff one resource between two open cluster tabs',
           onClick: () => openCompareClusters(),
-        }),
+        }, el('span', { style: 'margin-right:5px;color:var(--accent)' }, '⧉'), 'Compare…'),
         // The overview and, when a kind is open, its list too — refreshing only
         // the strip left the rows you were looking at as stale as before.
         el('button', {
-          class: 'ghost-btn sm', text: '⟳ Refresh', title: 'Re-read the overview and the list on screen',
-          onClick: () => {
+          class: 'ghost-btn sm', title: 'Re-read the overview and the list on screen',
+          onClick: async () => {
+            // Browsing through a tsh proxy kube tunnel that has since
+            // been disconnected (or just died) means every read below
+            // would fail the same way — so a refresh is the moment this
+            // asks for a new one rather than another ever since.
+            if (kubeSpec.viaProxy) kubeSpec = await (await import('./kubepanel.js')).reviveKubeProxySpec(kubeSpec);
             loadOverview();
             if (selected === 'helm') loadHelm();
             else if (selected === '3d') load3dScene();
             else if (selected) refreshScoped();
           },
-        })));
+        }, el('span', { style: 'margin-right:5px;color:var(--green)' }, '⟳'), 'Refresh')));
   };
 
   let overviewError = '';
@@ -983,8 +988,13 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
     render();
     // Events were already worth a 10s poll on their own; everything else
     // gets the slower reconcile now that a watch covers the fast path.
-    liveTimer = setInterval(() => {
+    liveTimer = setInterval(async () => {
       if (!body?.isConnected) { stopLive(); return; }
+      // Same recovery the Refresh button's own click makes — a live pane
+      // left open past a "Disconnect" (or the tsh process just dying on
+      // its own) would otherwise fail this exact call every cycle, forever,
+      // with nothing on screen to say why.
+      if (kubeSpec.viaProxy) kubeSpec = await (await import('./kubepanel.js')).reviveKubeProxySpec(kubeSpec);
       reconcileRows(t, selector);
     }, t.kind === 'Event' ? 10000 : 30000);
     try {
@@ -1427,6 +1437,14 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
           { label: r.name, heading: true },
           { label: isStarred(selected, r) ? 'Unstar' : 'Star', icon: '★', onClick: () => toggleStar(selected, r) },
           selected.kind === 'Pod' ? { label: 'Exec', submenu: perContainer('Exec into', 'openPodExec') } : null,
+          // One command, run once — no pane, no pty. See kubepanel.js's
+          // openPodRunCommandDialog.
+          selected.kind === 'Pod' ? (containers.length === 1
+            ? { label: 'Run a command…', onClick: async () => (await import('./kubepanel.js')).openPodRunCommandDialog(kubeSpec, r, containers[0]) }
+            : { label: 'Run a command…', submenu: containers.map((name) => ({
+              label: name,
+              onClick: async () => (await import('./kubepanel.js')).openPodRunCommandDialog(kubeSpec, r, name),
+            })) }) : null,
           selected.kind === 'Pod' ? { label: 'Logs', submenu: perContainer('Logs for', 'openPodLogs') } : null,
           selected.kind === 'Pod' ? { label: 'Attach', submenu: perContainer('Attach to', 'openPodAttach') } : null,
           selected.kind === 'Pod' ? { label: 'Debug container…', submenu: perContainer('Debug', 'openPodDebug') } : null,

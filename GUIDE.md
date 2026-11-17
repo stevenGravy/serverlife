@@ -2288,6 +2288,19 @@ means. It is being added in stages; this section grows as each one lands.
   YAML (viewable, editable, exportable), delete, and port-forwarding. Any
   port-forwards running on that cluster show inline the moment it's
   expanded — no need to open the full browser just to see what's live.
+- **Run a command in a pod**: right-click a pod (here or in the full
+  browser) → *Run a command…* runs one `kubectl exec … -- sh -c` with no
+  shell opened, and shows what it printed, with *Copy output* and *Save
+  output…*. Enter runs it, Shift+Enter adds a line, and *Recent…* keeps the
+  commands run in pods, apart from the ones run on servers.
+- **A cluster that needs per-session MFA**: right-click it → *Mark as needing
+  MFA* (an offered cluster, not yet logged in to, can be marked too), and it
+  carries an `mfa` tag. Browsing it — the full browser, its exec sessions
+  and file browser, k9s — then goes through one `tsh proxy kube` tunnel, so
+  it asks for MFA once instead of on every read; *Disconnect (stop tsh proxy
+  kube)* on the same menu ends the tunnel, and Refresh in a browser left open
+  starts it again. It gets no background heartbeat, since asking would mean
+  a prompt nobody is there to answer.
 - **A namespace you can use but not list**: a role scoped to one namespace
   can't list namespaces, so the tree has nothing to show. *Type a
   namespace…* at the foot of the tree (and in the full browser's Namespace

@@ -2513,6 +2513,9 @@ function registerIpc() {
   handle('kube:namespaces', async (opts) => kube.listNamespaces(opts || {}));
   handle('kube:pods', async (opts) => kube.listPods(opts || {}));
   handle('kube:execSpec', async (opts) => kube.execSpec(opts || {}));
+  // A single non-interactive command in a pod — see kube.execRun. opts
+  // carries the spec fields `execSpec` takes plus `command` and `timeout`.
+  handle('kube:exec', async (opts = {}) => kube.execRun(opts, opts.command, { timeout: opts.timeout }));
   handle('kube:attachSpec', async (opts) => kube.attachSpec(opts || {}));
   handle('kube:debugSpec', async (opts) => kube.debugSpec(opts || {}));
   handle('kube:nodeDebugSpec', async (opts) => kube.nodeDebugSpec(opts || {}));
@@ -2566,14 +2569,16 @@ function registerIpc() {
   handle('kube:cloudInfo', async (opts) => kuberesources.cloudInfo(opts?.spec || {}, { provider: opts?.provider || null }));
   handle('kube:detectProvider', async (opts) => kuberesources.detectProvider(opts?.spec || {}));
   // A cluster's heartbeat (GET /readyz) — never with background commands turned off in Settings.
+  // mfaHosts: the same "Mark as needing MFA" list sidebar.js's isMfaHost() reads, so a cluster
+  // marked that way is never asked for one here — see heartbeat()'s own gate for why.
   handle('kube:heartbeat', async (opts) => (quietRemote()
     ? { ok: false, state: 'quiet', detail: 'Background commands on servers are off in Settings.' }
-    : kuberesources.heartbeat(opts?.spec || {})));
+    : kuberesources.heartbeat(opts?.spec || {}, { mfaHosts: store.settings.mfaHosts || [] })));
   // Teleport's own heartbeats for its Kubernetes agents (tctl get kube_servers, with your login).
   handle('kube:agents', async (opts) => (quietRemote() ? { ok: false, state: 'quiet' } : kuberesources.kubeAgents(opts || {})));
   handle('kube:heartbeatTeleport', async (opts) => (quietRemote()
     ? { ok: false, state: 'quiet', detail: 'Background commands on servers are off in Settings.' }
-    : kuberesources.heartbeatTeleport(opts || {})));
+    : kuberesources.heartbeatTeleport({ ...(opts || {}), mfaHosts: store.settings.mfaHosts || [] })));
   // The cluster's page in its cloud's console — built here from what is known, never a URL from the renderer.
   handle('kube:openCloudConsole', async ({ provider, clusterName } = {}) => {
     const url = require('./kubeprovider').consoleUrl(provider, clusterName || '');
@@ -4263,14 +4268,9 @@ async function confirmQuit() {
   return true;
 }
 
-app.on('before-quit', async (e) => {
+/** Everything a quit — asked for, or forced — has to clean up before the process actually ends. */
+async function cleanupAndExit() {
   if (quitting) return;
-  e.preventDefault();
-  if (quitAsking) return;
-  quitAsking = true;
-  let go = true;
-  try { go = await confirmQuit(); } catch { go = true; } finally { quitAsking = false; }
-  if (!go) return;
   quitting = true;
   try {
     localTerms.closeAll();
@@ -4295,7 +4295,33 @@ app.on('before-quit', async (e) => {
   } finally {
     app.exit(0);
   }
+}
+
+app.on('before-quit', async (e) => {
+  if (quitting) return;
+  e.preventDefault();
+  if (quitAsking) return;
+  quitAsking = true;
+  let go = true;
+  try { go = await confirmQuit(); } catch { go = true; } finally { quitAsking = false; }
+  if (!go) return;
+  await cleanupAndExit();
 });
+
+/*
+ * A forceful stop — `kill`/`pkill` (SIGTERM), Ctrl-C in a foreground
+ * terminal (SIGINT) — never raises Electron's own `before-quit`, which
+ * only fires for a quit the app itself knows about (Cmd+Q, the Quit menu,
+ * window-all-closed below). Without this, everything before-quit stops —
+ * `tsh proxy kube` chief among them — was orphaned instead: left running
+ * with no app attached to it at all, for as long as this Mac stayed up.
+ * No confirmation dialog here: whatever sent the signal has already
+ * decided this process ends now, not asked what to do about open
+ * sessions.
+ */
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => { cleanupAndExit(); });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

@@ -837,10 +837,10 @@ async function openHostRow(host) {
     if (host.kubeContext) {
       const kubebrowser = await import('./kubebrowser.js');
       const c = host.kubeContext;
-      await kubebrowser.openKubeBrowser(
-        { ...kubepanel.kubeSpecOf(c), teleportProxy: c.teleportProxy || null, kubeClusterName: c.kubeClusterName || null, teleportCluster: c.teleportCluster || null },
-        c.kubeClusterName || c.name,
-      );
+      // kubeBrowseSpec(), not the plain kubeSpecOf() — a cluster marked
+      // as needing MFA browses through its tsh proxy kube tunnel instead
+      // of asking fresh for every one of the browser's own polls.
+      await kubebrowser.openKubeBrowser(await kubepanel.kubeBrowseSpec(c), c.kubeClusterName || c.name);
       return;
     }
     if (host.availableCluster) await kubepanel.connectAvailableCluster(host.profile, host.availableCluster);

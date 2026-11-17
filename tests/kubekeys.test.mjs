@@ -55,3 +55,20 @@ test('nothing else is touched, and it is done once', async () => {
   await settle();
   assert.equal(store.hostColors[OLD], 'set again');
 });
+
+test('with its Teleport cluster known, a cluster is keyed by that — the same in every copy of the rule', async () => {
+  const { createRequire } = await import('node:module');
+  const path = await import('node:path');
+  const { hostPrefKey } = createRequire(import.meta.url)(path.join(__PROJECT_ROOT__, 'src/main/store.js'));
+  const h = { ...kube(OLD, 'dev'), teleportCluster: 'prod' };
+  assert.equal(F.hostKey(h), 'kube:prod:dev');
+  assert.equal(hostPrefKey(h), F.hostKey(h));
+  assert.equal(hostPrefKey(kube(OLD, 'dev')), F.hostKey(kube(OLD, 'dev')));
+});
+
+test('a key written under the group form moves to the cluster form', async () => {
+  store.hostIcons = { [`kube:${G}:stage`]: '★' };
+  F.migrateKubeHostKeys([{ ...kube(`kube:tsh:x:stage`, 'stage'), teleportCluster: 'prod' }]);
+  await settle();
+  assert.deepEqual(store.hostIcons, { 'kube:prod:stage': '★' });
+});

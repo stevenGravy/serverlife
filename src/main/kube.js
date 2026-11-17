@@ -391,6 +391,25 @@ function execSpec(spec = {}) {
 }
 
 /**
+ * One command in a pod, run and captured rather than wired to a pty —
+ * `kubectl exec <pod> [-c container] -- sh -c <command>`. The question a
+ * shell session doesn't justify opening (a version check, a status probe),
+ * the same split `Connection.exec()` draws against `execInteractive()` for
+ * SSH hosts.
+ */
+async function execRun(spec = {}, command, { timeout = 20000 } = {}) {
+  if (!spec.podName) return { ok: false, error: 'No pod given', stdout: '', stderr: '' };
+  const cmd = (command || '').trim();
+  if (!cmd) return { ok: false, error: 'No command given', stdout: '', stderr: '' };
+  const { bin, baseArgs, env } = kubectlArgsFor(spec);
+  const args = [...baseArgs, 'exec', spec.podName];
+  if (spec.containerName) args.push('-c', spec.containerName);
+  args.push('--', 'sh', '-c', cmd);
+  const r = await execBin(bin, args, { env, timeout });
+  return { ok: r.ok, stdout: r.stdout, stderr: r.stderr, error: r.ok ? null : (plain(r.stderr) || r.err?.message || 'kubectl exec failed') };
+}
+
+/**
  * `kubectl attach -i`, for a container whose own entrypoint is already the
  * process worth seeing (a REPL, a long-lived CLI) rather than a fresh shell
  * beside it — the one thing exec cannot do. Deliberately `-i`, not `-it`:
@@ -650,5 +669,5 @@ async function loginKubeCluster({ proxy, home, cluster } = {}) {
 module.exports = {
   supported, listKubeClusters, kubectlArgsFor, loginKubeCluster, toKubeCluster,
   defaultKubeconfigPaths, listContexts, teleportOriginOf, useContext, deleteContext, editContext,
-  listNamespaces, listPods, execSpec, attachSpec, debugSpec, nodeDebugSpec, logArgs, logSpec, kubeconfigEnvFor, installTeleportAgent, commandPreview, shellQuote, AGENT_ROLES, teleportAgentValues, helmArgsFor,
+  listNamespaces, listPods, execSpec, execRun, attachSpec, debugSpec, nodeDebugSpec, logArgs, logSpec, kubeconfigEnvFor, installTeleportAgent, commandPreview, shellQuote, AGENT_ROLES, teleportAgentValues, helmArgsFor,
 };

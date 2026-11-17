@@ -648,7 +648,13 @@ async function teleportCredFor(spec = {}) {
       }
     }
   }
-  return { teleport: true, home, validUntil: best || null, good: best > Date.now() + 60000 };
+  return {
+    teleport: true, home, validUntil: best || null, good: best > Date.now() + 60000,
+    // The Teleport cluster and kube cluster this context actually is —
+    // already parsed above, and heartbeat()'s own MFA-mark check needs
+    // exactly this, not the kubeconfig's own (meaningless) cluster field.
+    cluster: origin.cluster, kubeCluster: origin.kubeCluster,
+  };
 }
 
 /*
@@ -660,13 +666,26 @@ async function teleportCredFor(spec = {}) {
  * home at a time, so two rounds never race to write the same file.
  */
 const kubeLogins = new Map();   // private kubeconfig path -> the login in flight
-async function heartbeatTeleport({ proxy, kubeCluster, home } = {}) {
+async function heartbeatTeleport({ proxy, kubeCluster, home, teleportCluster, mfaHosts = [] } = {}) {
   const fs = require('fs');
   const os = require('os');
   const path = require('path');
   const crypto = require('crypto');
   const teleport = require('./teleport');
   if (!proxy || !kubeCluster) return { ok: false, state: 'error', detail: 'Which cluster?', ms: 0, at: Date.now() };
+  /*
+   * The same mark heartbeat()'s own gate reads for an already-connected
+   * cluster, here for one not yet logged into: asking means `tsh kube
+   * login`, which on a per-session-MFA cluster is a fresh ceremony every
+   * tick, unattended and with nowhere to show it — and with several such
+   * clusters offered at once, several of these piling up together.
+   */
+  if (mfaHosts.length) {
+    const mfaId = teleport.kubeInventoryId({ cluster: teleportCluster, name: kubeCluster });
+    if (mfaHosts.includes(mfaId)) {
+      return { ok: false, state: 'mfa', ms: 0, at: Date.now(), detail: 'needs per-session MFA — not checked' };
+    }
+  }
   const dir = path.join(os.tmpdir(), `serverlife-kube-beat-${process.getuid ? process.getuid() : 'u'}`);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   // Named for the home tsh will actually use (unset and ~/.tsh written out are the same home): one file per cluster and home.
@@ -765,13 +784,32 @@ function teleportLoginGood(home, proxy) {
   return best > Date.now() + 120000;
 }
 
-async function heartbeat(spec = {}, { gate = true } = {}) {
+async function heartbeat(spec = {}, { gate = true, mfaHosts = [] } = {}) {
   const cred = gate ? await teleportCredFor(spec) : { teleport: false };
   if (cred.teleport && !cred.good) {
     return {
       ok: false, state: 'idle', ms: 0, at: Date.now(),
       detail: cred.validUntil ? 'not checked — its Teleport certificate has expired; open it to log in again' : 'not checked — no Teleport certificate for it yet; open it to log in',
     };
+  }
+  /*
+   * A role that requires per-session MFA for this cluster means every
+   * fresh `tsh kube credentials` call — including the one kubectl's own
+   * exec plugin would make for the /readyz probe below — raises its own
+   * ceremony, however fresh `cred.good`'s certificate still is: that gate
+   * answers "is there a usable certificate at all", not "would asking for
+   * one again need a touch". Without this, a cluster marked as needing
+   * MFA (the same mark the sidebar's own "Mark as needing MFA" sets) was
+   * asked here every tick forever — each one an unattended background
+   * `tsh kube credentials` with nowhere to show its prompt and no one
+   * there to answer it, several piling up at once since a hung one is
+   * never cleaned up by the next tick's own.
+   */
+  if (cred.teleport && mfaHosts.length) {
+    const mfaId = require('./teleport').kubeInventoryId({ cluster: cred.cluster, name: cred.kubeCluster });
+    if (mfaHosts.includes(mfaId)) {
+      return { ok: false, state: 'mfa', ms: 0, at: Date.now(), detail: 'needs per-session MFA — not checked' };
+    }
   }
   const { bin, baseArgs, env } = kube.kubectlArgsFor({ ...spec, namespace: null });
   const t = Date.now();

@@ -1338,13 +1338,18 @@ function inventoryNodeIds({ items = [], home } = {}) {
  * never collide with a node id even if some future cluster named a kube
  * resource the same as a node's uuid-shaped string.
  */
+/** The inventory id formula inventoryKubeIds() applies to every item — shared with heartbeat()'s own MFA-mark check in kuberesources.js, which has no list of items to batch, just one cluster to ask about. */
+function kubeInventoryId({ cluster, name, home } = {}) {
+  return isDefaultHome(home)
+    ? `tsh-kube:${cluster || ''}:${name}`
+    : `tsh-kube:${homeName(home) || home}:${cluster || ''}:${name}`;
+}
+
 function inventoryKubeIds({ items = [], home } = {}) {
   const out = {};
   for (const it of items || []) {
     if (!it || !it.id || !it.name) continue;
-    out[it.id] = isDefaultHome(home)
-      ? `tsh-kube:${it.cluster || ''}:${it.name}`
-      : `tsh-kube:${homeName(home) || home}:${it.cluster || ''}:${it.name}`;
+    out[it.id] = kubeInventoryId({ cluster: it.cluster, name: it.name, home });
   }
   return out;
 }
@@ -2158,7 +2163,7 @@ module.exports = {
   teleportSshTarget, markAmbiguous, roleChoicesFrom, probeRequest, readProbe, rolesForResources,
   parseRequestableRoles, login, loginArgs, loginCommand, logout, run, proxyAddress,
   listRequests, showRequest, assumeRequest, dropRequest, createRequest, switchProfile,
-  searchRequestable, searchRequestableRoles, REQUEST_KINDS, createRequestArgs, inventoryNodeIds, inventoryKubeIds,
+  searchRequestable, searchRequestableRoles, REQUEST_KINDS, createRequestArgs, inventoryNodeIds, inventoryKubeIds, kubeInventoryId,
   listRecordings, listActiveSessions, playArgs, latencyArgs, webSessionUrl, webClusterUrl, playText, searchRecordings,
   toRecordingDate,
   findTctl, createJoinToken, nodeInstallCommand,
