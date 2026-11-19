@@ -1,5 +1,5 @@
 import { el, clear, fmtDate, clickOrDblClick } from './util.js';
-import { modal, toast, confirm, select, contextMenu, textInput, field, checkbox } from './ui.js';
+import { modal, toast, status, confirm, select, contextMenu, textInput, field, checkbox } from './ui.js';
 import { openKubeBrowserTab } from './sessions.js';
 import { Kube3D } from './kube3d.js';
 import { state } from './state.js';
@@ -349,6 +349,15 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
         el('div', { class: 'kube-browser-main' }, mainPanel())),
       commandBar());
     wrapper.addEventListener('keydown', onPaneKeydown);
+    // Anywhere a row's own menu did not already answer: the toolbar's actions.
+    wrapper.addEventListener('contextmenu', (e) => {
+      if (e.defaultPrevented || e.target.closest('input, textarea, .cm-editor')) return;
+      e.preventDefault();
+      contextMenu(e.clientX, e.clientY, [
+        { label: title || kubeSpec.kubeClusterName || kubeSpec.contextName || 'Cluster', heading: true },
+        clusterActionsItem(),
+      ]);
+    });
     body.append(wrapper);
   };
 
@@ -483,6 +492,102 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
   };
 
   /** Namespace selector + the cluster-health strip every k8s dashboard leads with. */
+  /** What *+ New* offers — the toolbar's menu and the right-click *Cluster actions* share it. */
+  const newMenuItems = () => [
+            { label: 'Apply YAML…', onClick: () => applyYamlFlow('Apply YAML') },
+            { label: 'Build from Kustomization…', onClick: () => openKustomizeBuildFlow() },
+            { label: 'New Namespace…', onClick: () => openNewNamespaceDialog() },
+            { label: 'New Pod…', onClick: () => openNewPodDialog() },
+            { label: 'New Deployment…', onClick: () => openCreateResourceDialog('Deployment') },
+            { label: 'New Service…', onClick: () => openCreateResourceDialog('Service') },
+            { label: 'New ConfigMap…', onClick: () => openCreateResourceDialog('ConfigMap') },
+            { label: 'New Secret…', onClick: () => openCreateResourceDialog('Secret') },
+            { label: 'Map a Teleport group to a ClusterRole…', onClick: () => openGroupMappingWizard() },
+            { label: 'New Role…', onClick: () => openCreateResourceDialog('Role') },
+            { label: 'New ClusterRole…', onClick: () => openCreateResourceDialog('ClusterRole') },
+            { label: 'New RoleBinding…', onClick: () => openCreateResourceDialog('RoleBinding') },
+            { label: 'New ClusterRoleBinding…', onClick: () => openCreateResourceDialog('ClusterRoleBinding') },
+            { sep: true },
+            // The same wizard a local context's own menu opens — here too, so
+            // enrolling the cluster you are looking at is not a trip back to
+            // the sidebar. Allowed on a Teleport-reached one as well: the
+            // point may be adding app/discovery to it.
+            {
+              label: 'Install Teleport agent…',
+              title: kubeSpec.teleportProxy
+                ? `Already reached through ${kubeSpec.teleportProxy} — this installs another agent (e.g. for app or discovery)`
+                : 'teleport-kube-agent via Helm: puts this cluster behind Teleport, with app and discovery if wanted',
+              onClick: async () => (await import('./kubepanel.js')).openInstallTeleportWizard({
+                kubeconfigPaths: kubeSpec.kubeconfigPaths, contextName: kubeSpec.contextName,
+                name: title || kubeSpec.contextName, kubeClusterName: null,
+              }),
+            },
+  ];
+
+  /*
+   * Every other toolbar button, as data: drawn as the buttons, and offered
+   * again under *Cluster actions* when the browser is right-clicked, so the
+   * two never disagree about what there is to do here.
+   */
+  const refreshAll = async () => {
+    // Browsing through a tsh proxy kube tunnel that has since been
+    // disconnected (or just died) means every read below would fail the
+    // same way — so a refresh is the moment this asks for a new one.
+    if (kubeSpec.viaProxy) kubeSpec = await (await import('./kubepanel.js')).reviveKubeProxySpec(kubeSpec);
+    loadOverview();
+    if (selected === 'helm') loadHelm();
+    else if (selected === '3d') load3dScene();
+    else if (selected) refreshScoped();
+  };
+  const clusterActions = () => [
+    {
+      icon: '⇄', color: 'var(--green)', label: `${forwardCount} active`, menuLabel: `Port-forwards (${forwardCount} active)…`,
+      hidden: !forwardCount, title: 'Active port-forwards on this cluster — click to manage',
+      onClick: async () => (await import('./kubepanel.js')).showActivePortForwards({ contextName: kubeSpec.contextName }),
+    },
+    {
+      icon: '🔑', color: 'var(--accent)', label: 'My access',
+      title: 'Who this cluster sees you as, your groups, and what you can do — kubectl auth can-i',
+      onClick: () => openAccessModal(),
+    },
+    {
+      icon: '✉', color: 'var(--amber)', label: 'Request namespace/pod access…',
+      title: kubeSpec.teleportProxy
+        ? 'Ask for a namespace or pod you cannot see yet here — already scoped to this cluster'
+        : 'Not reached through Teleport — nothing to request here',
+      disabled: !kubeSpec.teleportProxy,
+      onClick: () => requestKubeResourceAccess(),
+    },
+    {
+      icon: '🛡', color: 'var(--amber)', label: 'Scan cluster…',
+      title: 'A Popeye lint — misconfigurations and common risks, not a deep vulnerability scan',
+      onClick: () => openScanModal(),
+    },
+    {
+      icon: '🔍', color: 'var(--accent)', label: 'Search open clusters…',
+      title: 'Look for a resource across every cluster tab already open',
+      onClick: () => openCrossClusterSearch(),
+    },
+    {
+      icon: '⧉', color: 'var(--accent)', label: 'Compare…',
+      title: 'Diff one resource between two open cluster tabs',
+      onClick: () => openCompareClusters(),
+    },
+    // The overview and, when a kind is open, its list too — refreshing only
+    // the strip left the rows you were looking at as stale as before.
+    { icon: '⟳', color: 'var(--green)', label: 'Refresh', title: 'Re-read the overview and the list on screen', onClick: refreshAll },
+  ];
+  /** The toolbar as a submenu — for the end of any right-click menu in this browser. */
+  const clusterActionsItem = () => ({
+    label: 'Cluster actions', icon: '☸',
+    submenu: [
+      { label: 'New', icon: '+', submenu: newMenuItems() },
+      ...clusterActions().filter((x) => !x.hidden).map((x) => ({
+        label: x.menuLabel || x.label, icon: x.icon, title: x.title, disabled: !!x.disabled, onClick: x.onClick,
+      })),
+    ],
+  });
+
   const topBar = () => {
     // A namespace change is a refresh, not leaving the scope a "Pods"
     // button (or the label-selector input below) set — losing it on
@@ -602,81 +707,11 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
         el('button', {
           class: 'primary-btn sm', text: '+ New',
           title: 'Apply a YAML manifest, or a quick namespace/pod without writing one by hand',
-          onClick: (e) => contextMenu(e.clientX, e.clientY, [
-            { label: 'Apply YAML…', onClick: () => applyYamlFlow('Apply YAML') },
-            { label: 'Build from Kustomization…', onClick: () => openKustomizeBuildFlow() },
-            { label: 'New Namespace…', onClick: () => openNewNamespaceDialog() },
-            { label: 'New Pod…', onClick: () => openNewPodDialog() },
-            { label: 'New Deployment…', onClick: () => openCreateResourceDialog('Deployment') },
-            { label: 'New Service…', onClick: () => openCreateResourceDialog('Service') },
-            { label: 'New ConfigMap…', onClick: () => openCreateResourceDialog('ConfigMap') },
-            { label: 'New Secret…', onClick: () => openCreateResourceDialog('Secret') },
-            { label: 'Map a Teleport group to a ClusterRole…', onClick: () => openGroupMappingWizard() },
-            { label: 'New Role…', onClick: () => openCreateResourceDialog('Role') },
-            { label: 'New ClusterRole…', onClick: () => openCreateResourceDialog('ClusterRole') },
-            { label: 'New RoleBinding…', onClick: () => openCreateResourceDialog('RoleBinding') },
-            { label: 'New ClusterRoleBinding…', onClick: () => openCreateResourceDialog('ClusterRoleBinding') },
-            { sep: true },
-            // The same wizard a local context's own menu opens — here too, so
-            // enrolling the cluster you are looking at is not a trip back to
-            // the sidebar. Allowed on a Teleport-reached one as well: the
-            // point may be adding app/discovery to it.
-            {
-              label: 'Install Teleport agent…',
-              title: kubeSpec.teleportProxy
-                ? `Already reached through ${kubeSpec.teleportProxy} — this installs another agent (e.g. for app or discovery)`
-                : 'teleport-kube-agent via Helm: puts this cluster behind Teleport, with app and discovery if wanted',
-              onClick: async () => (await import('./kubepanel.js')).openInstallTeleportWizard({
-                kubeconfigPaths: kubeSpec.kubeconfigPaths, contextName: kubeSpec.contextName,
-                name: title || kubeSpec.contextName, kubeClusterName: null,
-              }),
-            },
-          ]),
+          onClick: (e) => contextMenu(e.clientX, e.clientY, newMenuItems()),
         }),
-        forwardCount ? el('button', {
-          class: 'ghost-btn sm', title: 'Active port-forwards on this cluster — click to manage',
-          onClick: async () => (await import('./kubepanel.js')).showActivePortForwards({ contextName: kubeSpec.contextName }),
-        }, el('span', { style: 'margin-right:5px;color:var(--green)' }, '⇄'), `${forwardCount} active`) : null,
-        el('button', {
-          class: 'ghost-btn sm', title: 'Who this cluster sees you as, your groups, and what you can do — kubectl auth can-i',
-          onClick: () => openAccessModal(),
-        }, el('span', { style: 'margin-right:5px;color:var(--accent)' }, '🔑'), 'My access'),
-        el('button', {
-          class: 'ghost-btn sm',
-          title: kubeSpec.teleportProxy
-            ? 'Ask for a namespace or pod you cannot see yet here — already scoped to this cluster'
-            : 'Not reached through Teleport — nothing to request here',
-          disabled: !kubeSpec.teleportProxy,
-          onClick: () => requestKubeResourceAccess(),
-        }, el('span', { style: 'margin-right:5px;color:var(--amber)' }, '✉'), 'Request namespace/pod access…'),
-        el('button', {
-          class: 'ghost-btn sm', title: 'A Popeye lint — misconfigurations and common risks, not a deep vulnerability scan',
-          onClick: () => openScanModal(),
-        }, el('span', { style: 'margin-right:5px;color:var(--amber)' }, '🛡'), 'Scan cluster…'),
-        el('button', {
-          class: 'ghost-btn sm', title: 'Look for a resource across every cluster tab already open',
-          onClick: () => openCrossClusterSearch(),
-        }, el('span', { style: 'margin-right:5px;color:var(--accent)' }, '🔍'), 'Search open clusters…'),
-        el('button', {
-          class: 'ghost-btn sm', title: 'Diff one resource between two open cluster tabs',
-          onClick: () => openCompareClusters(),
-        }, el('span', { style: 'margin-right:5px;color:var(--accent)' }, '⧉'), 'Compare…'),
-        // The overview and, when a kind is open, its list too — refreshing only
-        // the strip left the rows you were looking at as stale as before.
-        el('button', {
-          class: 'ghost-btn sm', title: 'Re-read the overview and the list on screen',
-          onClick: async () => {
-            // Browsing through a tsh proxy kube tunnel that has since
-            // been disconnected (or just died) means every read below
-            // would fail the same way — so a refresh is the moment this
-            // asks for a new one rather than another ever since.
-            if (kubeSpec.viaProxy) kubeSpec = await (await import('./kubepanel.js')).reviveKubeProxySpec(kubeSpec);
-            loadOverview();
-            if (selected === 'helm') loadHelm();
-            else if (selected === '3d') load3dScene();
-            else if (selected) refreshScoped();
-          },
-        }, el('span', { style: 'margin-right:5px;color:var(--green)' }, '⟳'), 'Refresh')));
+        ...clusterActions().filter((x) => !x.hidden).map((x) => el('button', {
+          class: 'ghost-btn sm', title: x.title, disabled: !!x.disabled, onClick: x.onClick,
+        }, el('span', { style: `margin-right:5px;color:${x.color}` }, x.icon), x.label))));
   };
 
   let overviewError = '';
@@ -763,6 +798,26 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
   // render() clears and rebuilds the whole panel on every state change, and
   // a brand new <input> each time would drop focus and the cursor after
   // every single character typed into it.
+  /*
+   * A filter box with a ✕ to empty it, shown only while there is something
+   * to clear. Escape in the box does the same. `clear` resets the filter's
+   * own variable and redraws — each box keeps its value outside the input.
+   */
+  const clearableBox = (input, value, clear, style) => {
+    if (!input.dataset.clearable) {
+      input.dataset.clearable = '1';
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); clear(); input.focus(); }
+      });
+    }
+    input.style.paddingRight = '26px';
+    return el('div', { style }, el('div', { style: 'position:relative' }, input,
+      value ? el('button', {
+        class: 'filter-clear', type: 'button', text: '\u2715', title: 'Clear the filter (Esc)',
+        onClick: (e) => { e.stopPropagation(); clear(); input.focus(); },
+      }) : null));
+  };
+
   let kindFilterInputEl = null;
   const kindSearch = () => {
     if (!kindFilterInputEl) {
@@ -780,7 +835,7 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
       });
     }
     if (kindFilterInputEl.value !== kindFilter) kindFilterInputEl.value = kindFilter;
-    return el('div', { style: 'padding:4px 2px 8px' }, kindFilterInputEl);
+    return clearableBox(kindFilterInputEl, kindFilter, () => { kindFilter = ''; kindFilterInputEl.value = ''; render(); }, 'padding:4px 2px 8px');
   };
 
   /*
@@ -1260,7 +1315,7 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
     }
     rowFilterInputEl.placeholder = `Filter ${selected.kind} by name…`;
     if (rowFilterInputEl.value !== rowFilter) rowFilterInputEl.value = rowFilter;
-    return el('div', { style: 'padding:0 2px 8px' }, rowFilterInputEl);
+    return clearableBox(rowFilterInputEl, rowFilter, () => { rowFilter = ''; rowFilterInputEl.value = ''; render(); }, 'padding:0 2px 8px');
   };
 
   const mainPanel = () => {
@@ -1465,6 +1520,8 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
           ...extraRowMenu(r),
           { sep: true },
           { label: 'Delete…', onClick: () => deleteRow(r) },
+          { sep: true },
+          clusterActionsItem(),
         ].filter(Boolean));
       });
       return row;
@@ -2204,7 +2261,7 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
       });
     }
     if (helmFilterInputEl.value !== helmRowFilter) helmFilterInputEl.value = helmRowFilter;
-    return el('div', { style: 'padding:0 2px 8px' }, helmFilterInputEl);
+    return clearableBox(helmFilterInputEl, helmRowFilter, () => { helmRowFilter = ''; helmFilterInputEl.value = ''; render(); }, 'padding:0 2px 8px');
   };
 
   const viewHelmValues = async (rel) => {
@@ -2224,15 +2281,60 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
     if (saved) toast(`Saved ${saved.path}`);
   };
   const uninstallHelm = async (rel) => {
-    const ok = await confirm({
-      title: 'Uninstall release', message: `Uninstall "${rel.name}" from ${rel.namespace}?`,
-      detail: 'This removes the release and everything it owns.', confirmLabel: 'Uninstall', danger: true,
+    const noHooks = checkbox('Skip hooks (--no-hooks) — pre- and post-delete jobs do not run', false);
+    const keepHistory = checkbox('Keep history (--keep-history) — the release stays listed as uninstalled', false);
+    const wait = checkbox('Wait until everything is gone (--wait, --cascade foreground)', false);
+    const orphan = checkbox('Leave dependents behind (--cascade orphan)', false);
+    const dryRun = checkbox('Dry run (--dry-run) — say what would go, remove nothing', false);
+    const timeoutIn = textInput({ placeholder: '5m — helm’s default' });
+    const descIn = textInput({ placeholder: 'Optional — kept with the release when history is kept' });
+    const preview = el('div', { class: 'hint', style: 'font-family:var(--mono);font-size:11px;word-break:break-all;margin-top:8px' });
+    const options = () => ({
+      noHooks: noHooks.input.checked, keepHistory: keepHistory.input.checked, dryRun: dryRun.input.checked,
+      wait: wait.input.checked,
+      cascade: orphan.input.checked ? 'orphan' : wait.input.checked ? 'foreground' : undefined,
+      timeout: timeoutIn.value.trim() || undefined, description: descIn.value.trim() || undefined,
     });
-    if (!ok) return;
-    const r = await window.api.kube.helmUninstall({ spec: kubeSpec, target: { release: rel.name, namespace: rel.namespace } });
-    if (!r.ok) return toast(r.error || 'Uninstall failed', 'error');
-    toast(`Uninstalled ${rel.name}`);
-    loadHelm();
+    const sync = () => {
+      // Waiting for dependents to go and leaving them behind are opposites.
+      if (wait.input.checked && orphan.input.checked) orphan.input.checked = false;
+      orphan.input.disabled = wait.input.checked;
+      const o = options();
+      preview.textContent = ['helm uninstall', rel.name, '-n', rel.namespace,
+        o.noHooks && '--no-hooks', o.keepHistory && '--keep-history', o.dryRun && '--dry-run', o.wait && '--wait',
+        o.cascade && `--cascade ${o.cascade}`, o.timeout && `--timeout ${o.timeout}`,
+        o.description && `--description ${JSON.stringify(o.description)}`].filter(Boolean).join(' ');
+    };
+    for (const c of [noHooks, keepHistory, wait, orphan, dryRun]) c.input.addEventListener('change', sync);
+    for (const i of [timeoutIn, descIn]) i.addEventListener('input', sync);
+    const go = await modal({
+      title: 'Uninstall release',
+      subtitle: `${rel.name} in ${rel.namespace}`,
+      width: 'min(560px, 94vw)',
+      render: (body) => {
+        body.append(
+          el('div', { style: 'margin-bottom:10px', text: 'This removes the release and everything it owns.' }),
+          noHooks, keepHistory, wait, orphan, dryRun,
+          field('Timeout', timeoutIn, 'For each step helm waits on — hooks, and with --wait the deletions'),
+          field('Description', descIn),
+          preview);
+        sync();
+      },
+      buttons: [
+        { label: 'Cancel', value: null },
+        { label: 'Uninstall', class: 'danger-btn', value: true },
+      ],
+    });
+    if (!go) return;
+    const opts = options();
+    status(`${opts.dryRun ? 'Dry-running the uninstall of' : 'Uninstalling'} ${rel.name}…`, 0);
+    const r = await window.api.kube.helmUninstall({ spec: kubeSpec, target: { release: rel.name, namespace: rel.namespace, options: opts } })
+      .catch((e) => ({ ok: false, error: e.message }));
+    status('');
+    if (!opts.dryRun) loadHelm();
+    // What the cluster was asked to remove, to read — not a toast that is gone in a moment.
+    await textModal(`${rel.name} — ${!r.ok ? 'uninstall failed' : opts.dryRun ? 'dry run' : 'uninstalled'}`,
+      r.output || r.error || (r.ok ? 'Uninstalled.' : 'Uninstall failed'), { lang: 'text' });
   };
   /** `helm test` — the chart's own tests, run against this already-deployed release. */
   const testHelmRelease = async (rel) => {
@@ -2649,6 +2751,8 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
             { label: 'Export manifest…', onClick: () => exportHelmManifest(rel) },
             { sep: true },
             { label: 'Uninstall…', onClick: () => uninstallHelm(rel) },
+            { sep: true },
+            clusterActionsItem(),
           ]);
         });
         return row;

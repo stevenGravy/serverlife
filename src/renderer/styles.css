@@ -4246,3 +4246,11 @@ input.needed, textarea.needed {
 }
 /* Guessed from the name: dashed, so it does not read as known. */
 .kprov.guess { border-style: dashed; opacity: .6; }
+
+/* The ✕ inside a cluster browser filter box (kubebrowser.js clearableBox). */
+.filter-clear {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  border: 0; background: transparent; color: var(--muted);
+  font-size: 11px; line-height: 1; padding: 3px 4px; border-radius: 4px; cursor: pointer;
+}
+.filter-clear:hover { color: var(--text); background: var(--panel-2); }

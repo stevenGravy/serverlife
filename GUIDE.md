@@ -2315,7 +2315,13 @@ kind the cluster actually has — `kubectl api-resources` is asked, not a fixed
 list, so a CRD installed yesterday needs no app update to browse today.
 Categorised into Workloads, Config, Network, Storage, Access Control,
 Cluster and Custom Resources, with a kind filter box once there are a lot of
-them.
+them. Each filter box (kinds, a kind's rows, Helm releases) has a ✕ to empty
+it, and Escape does the same.
+
+**Right-click anywhere in the browser** for *Cluster actions* — every toolbar
+button as a menu: *New* (its own submenu), port-forwards, *My access*,
+*Request namespace/pod access…*, *Scan cluster…*, *Search open clusters…*,
+*Compare…* and *Refresh*. A row's own menu ends with the same submenu.
 
 - **Which cloud it is on.** A small outlined badge beside the ☸ — **EKS**,
   **GKE**, **AKS**, or a local cluster (minikube, kind, Docker Desktop, k3s) —
@@ -2641,6 +2647,13 @@ name + URL + chart name — the repo is added for you) or a local chart
 path, with an optional values YAML and a dry-run checkbox that defaults
 checked. Reachable in one click from a cluster's right-click menu too —
 "Manage Helm releases…" opens the browser straight on this list.
+
+**Uninstall…** asks first, with helm's own options as ticks: *Skip hooks*
+(`--no-hooks`), *Keep history* (`--keep-history`), *Wait until everything is
+gone* (`--wait` with a foreground cascade), *Leave dependents behind*
+(`--cascade orphan`) and *Dry run*, plus a timeout and a description — the
+command it will run is shown beneath them. What the cluster removed is shown
+afterwards, each `Kind/name` on its own line, rather than a passing toast.
 
 - **README** and **Render templates…**, beside the chart fields in
   Install/Upgrade: `helm show readme` as plain text, and `helm template`

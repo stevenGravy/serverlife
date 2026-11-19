@@ -98,11 +98,86 @@ async function rollback(spec = {}, { release, namespace, revision } = {}) {
   return r.ok ? { ok: true, output: plain(r.stdout) } : { ok: false, error: plain(r.stderr) || 'helm rollback failed' };
 }
 
-/** `helm uninstall <release> -n ns` — removes the release and everything it owns. */
-async function uninstall(spec = {}, { release, namespace } = {}) {
+/*
+ * What `helm uninstall --debug` says it deleted, as Kind/name — Helm 4's
+ * structured lines (`msg="deleting resource owned by this release" kind=…
+ * name=…`) and Helm 3's prose (`Starting delete for "name" Kind`). Each
+ * resource once, in the order helm deleted them.
+ */
+function deletedResources(text) {
+  const out = [];
+  const seen = new Set();
+  const add = (kind, name) => {
+    const k = `${kind}/${name}`;
+    if (kind && name && !seen.has(k)) { seen.add(k); out.push(k); }
+  };
+  const lines = String(text || '').split(/\r?\n/);
+  for (const line of lines) {
+    if (/deleting resource owned by this release/.test(line)) {
+      add(/\bkind=("?)([^\s"]+)\1/.exec(line)?.[2], /\bname=("?)([^\s"]+)\1/.exec(line)?.[2]);
+    }
+  }
+  if (!out.length) {
+    for (const line of lines) {
+      const m = /Starting delete for "([^"]+)" (\S+)/.exec(line);
+      if (m) add(m[2], m[1]);
+    }
+  }
+  return out;
+}
+
+/** helm's own words, without the --debug lines asked for only to learn what was deleted. */
+function withoutDebug(text) {
+  return plain(String(text || '').split(/\r?\n/)
+    .filter((l) => !/^level=DEBUG\b|^(uninstall|client\.go|wait\.go|uninstall\.go)[: ]|^Starting delete for |^beginning wait for |^purge requested/.test(l.trim()))
+    .join('\n'));
+}
+
+/**
+ * `helm uninstall <release> -n ns` — removes the release and everything it
+ * owns, and says what that was: helm's own line, then each resource the
+ * cluster was asked to delete (read from `--debug`, which is where helm
+ * names them), so the result is something to read rather than a toast.
+ */
+/**
+ * The flags an uninstall was asked for, checked: a timeout is helm's own
+ * duration form (`90s`, `5m`, `1h30m`) and the cascade one of its three
+ * words, so nothing typed into the dialog reaches helm as anything else.
+ */
+function uninstallFlags({ noHooks, keepHistory, dryRun, wait, cascade, timeout, description } = {}) {
+  const args = [];
+  if (noHooks) args.push('--no-hooks');
+  if (keepHistory) args.push('--keep-history');
+  if (dryRun) args.push('--dry-run');
+  if (wait) args.push('--wait');
+  if (cascade) {
+    if (!['background', 'orphan', 'foreground'].includes(cascade)) throw new Error(`Not a cascade helm knows: ${cascade}`);
+    args.push('--cascade', cascade);
+  }
+  if (timeout) {
+    if (!/^(\d+h)?(\d+m)?(\d+s)?$/.test(timeout) || !/\d/.test(timeout)) throw new Error(`Not a timeout helm reads: ${timeout} — try 90s, 5m or 1h`);
+    args.push('--timeout', timeout);
+  }
+  if (description) args.push('--description', String(description));
+  return args;
+}
+
+async function uninstall(spec = {}, { release, namespace, options = {} } = {}) {
   const { env, contextArgs } = kube.helmArgsFor(spec);
-  const r = await run([...contextArgs, 'uninstall', release, '-n', namespace], { env, timeout: 60000 });
-  return r.ok ? { ok: true, output: plain(r.stdout) } : { ok: false, error: plain(r.stderr) || 'helm uninstall failed' };
+  let flags;
+  try { flags = uninstallFlags(options); } catch (e) { return { ok: false, error: e.message, output: e.message, removed: [] }; }
+  // Long enough for helm's own --timeout, which applies to each step it waits on.
+  const r = await run([...contextArgs, 'uninstall', release, '-n', namespace, ...flags, '--debug'], { env, timeout: options.wait || options.timeout ? 30 * 60000 : 120000 });
+  const removed = deletedResources(r.stderr + '\n' + r.stdout);
+  const said = plain(r.stdout).trim();
+  const lines = [said || (r.ok ? `release "${release}" uninstalled` : '')];
+  if (removed.length) lines.push('', `Removed from ${namespace}:`, ...removed.map((x) => '  ' + x));
+  else if (r.ok && !options.dryRun) lines.push('', 'helm named nothing it deleted — the release may have owned no resources.');
+  if (r.ok && options.dryRun) lines.push('', 'A dry run: nothing was removed.');
+  const output = lines.filter((x, i) => x || i).join('\n').trim();
+  if (r.ok) return { ok: true, output, removed };
+  const error = withoutDebug(r.stderr) || 'helm uninstall failed';
+  return { ok: false, error, output: [output, error].filter(Boolean).join('\n\n'), removed };
 }
 
 /**
@@ -280,6 +355,6 @@ async function renderTemplate(spec = {}, { name, chartRef, valuesYaml } = {}) {
 }
 
 module.exports = {
-  listReleases, history, getValues, getManifest, rollback, uninstall, addRepo, install, upgrade, searchCharts, splitChart,
+  listReleases, history, getValues, getManifest, rollback, uninstall, uninstallFlags, deletedResources, addRepo, install, upgrade, searchCharts, splitChart,
   showReadme, getValuesSchema, fieldsFromSchema, test, renderTemplate,
 };

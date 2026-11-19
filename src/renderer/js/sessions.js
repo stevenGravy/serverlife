@@ -1163,8 +1163,10 @@ async function createPane({ tabId, kind, connId, cwd, graphic = false, explorerS
     view.focus();
   });
   element.addEventListener('contextmenu', (e) => {
-    // File explorers inside the pane provide their own menu.
-    if (e.target.closest('.pane-files')) return;
+    // File explorers inside the pane provide their own menu, and so does a
+    // cluster browser (its rows, and *Cluster actions* everywhere else) —
+    // the terminal's Copy / Paste / Split menu opened over theirs.
+    if (e.target.closest('.pane-files, .kbp-root')) return;
     onPaneContextMenu(e, id);
   });
 

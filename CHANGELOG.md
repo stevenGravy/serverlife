@@ -11,6 +11,34 @@ tagged `v<version>`.
 
 ---
 
+## [0.40.0] — 2026-11-19
+
+Helm uninstall with helm's own options and a list of what the cluster
+removed; the cluster browser's actions on a right-click; a ✕ to clear its
+filters.
+
+### Added
+
+- **Helm uninstall options** — *Skip hooks*, *Keep history*, *Wait until
+  everything is gone*, *Leave dependents behind*, *Dry run*, a timeout and a
+  description, with the command shown before it runs.
+- **Cluster actions on a right-click** anywhere in the cluster browser, and at
+  the foot of every row's menu: the toolbar's buttons, *New* included.
+- **A ✕ in the browser's filter boxes** — kinds, a kind's rows and Helm
+  releases — and Escape, to empty them.
+
+### Changed
+
+- **Helm uninstall shows what the cluster removed** — helm's own line and each
+  `Kind/name` it deleted — in a window to read, not a toast.
+
+### Fixed
+
+- **Right-clicking in a cluster browser opened the terminal's Copy / Paste /
+  Split menu** over the browser's own.
+
+---
+
 ## [0.39.0] — 2026-11-17
 
 Kubernetes clusters that need per-session MFA can be browsed off one
