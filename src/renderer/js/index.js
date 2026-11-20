@@ -2,6 +2,7 @@ import '@xterm/xterm/css/xterm.css';
 import { state } from './state.js';
 import { $, $$, el, clear, fmtBytes } from './util.js';
 import { toast, status, modal, field, textInput, select, checkbox, confirm, contextMenu } from './ui.js';
+import { wireSidebarPlace, applySidebarPlace, PLACES as SIDEBAR_PLACES, sidebarPlace } from './sidebarplace.js';
 import { organizeSettings } from './settingsnav.js';
 import { initSidebar, refreshInventory, renderSidebar, updateStatusBar } from './sidebar.js';
 import { initTabs, renderTabs } from './tabs.js';
@@ -821,6 +822,7 @@ export async function locateTsh() {
 async function openSettings() {
   const fontSize = textInput({ type: 'number', value: state.settings.fontSize || 13, min: 8, max: 28 });
   const sidebarSize = textInput({ type: 'number', value: state.settings.sidebarFontSize || 13, min: 10, max: 22 });
+  const sidebarPlaceSel = select(SIDEBAR_PLACES, sidebarPlace());
   // What the terminal size was before this dialog, so saving it changes the
   // panes only if the size itself changed — not every save, which would undo
   // the size each pane was given on its own with ⌘+ and ⌘−.
@@ -1526,6 +1528,7 @@ async function openSettings() {
         el('div', { class: 'field-row' },
           field('Terminal font size', fontSize),
           field('Host list text size', sidebarSize),
+          field('Sidebar position', sidebarPlaceSel),
           field('Scrollback lines', scrollback)),
         el('div', { class: 'hint', style: 'margin:-4px 0 10px' },
           `${state.appInfo?.platform === 'darwin' ? '\u2318' : 'Ctrl'} + and \u2212 change the pane you are in, `
@@ -1656,6 +1659,7 @@ async function openSettings() {
           heartbeatStyle: heartbeatStyleSel.value,
           fontSize: parseInt(fontSize.value, 10) || 13,
           sidebarFontSize: Math.max(10, Math.min(22, parseInt(sidebarSize.value, 10) || 13)),
+          sidebarPlace: sidebarPlaceSel.value,
           fontFamily: fontValue(),
           scrollback: parseInt(scrollback.value, 10) || 10000,
           cursorBlink: blink.input.checked,
@@ -1749,6 +1753,7 @@ async function openSettings() {
   // KubeLife's group and filter in Resources are present or absent only by this setting.
   import('./sidebar.js').then((m) => m.applyKubeEnabledSetting?.()).catch(() => {});
   applySidebarSize();
+  applySidebarPlace();
   // Live stats on or off, for the panes already open.
   import('./monitor.js').then((m) => m.applyLiveStatsSetting()).catch(() => {});
   for (const p of state.panes.values()) {
@@ -1778,7 +1783,7 @@ async function openSettings() {
  * every launch is exactly the sort of friction nobody should have to accept.
  */
 const PANELS = [
-  { handle: '#sidebar-resizer', target: '#sidebar', prop: 'width', min: 170, max: 460 },
+  // The sidebar is not here: it can sit on any side, so sidebarplace.js drags it.
   { handle: '#file-resizer-v', target: '#filepanel', prop: 'width', min: 200, max: 720 },
   /*
    * The dock's ceiling is a share of the window, not 560 pixels: on a laptop
@@ -1793,6 +1798,7 @@ const PANELS = [
 ];
 
 function wireResizers() {
+  wireSidebarPlace({ refit, contextMenu });
   for (const p of PANELS) {
     dragResize($(p.handle), $(p.target), p.prop, p.min, p.max, p.inverse, p.handle);
   }

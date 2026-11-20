@@ -128,6 +128,19 @@ export class TermView {
       macOptionClickForcesSelection: true,
       rightClickSelectsWord: false,
       theme: activeTheme(),
+      /*
+       * OSC 8 hyperlinks — the clickable text programs like Claude Code
+       * print, whose address is not the words shown. xterm's own handler
+       * asked "Do you want to navigate to …?" and then opened an empty
+       * window to point at the address afterwards; the main process only
+       * ever sees that empty window, refuses it, and nothing opened. Sent
+       * the same way as a plain URL instead: links.js asks, showing the
+       * real address, and opens it in the browser.
+       */
+      linkHandler: {
+        activate: (_e, uri) => { openLink(uri); },
+        allowNonHttpProtocols: false,
+      },
     });
 
     this.fit = new FitAddon();

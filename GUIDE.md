@@ -2102,6 +2102,12 @@ cluster, see [Which tsh](#which-tsh).)
   *start a Phase build instead* link that opens New Phase (on top of the Phase
   you picked, if any) — or a *build one from setups* link, which opens the
   builder on it. Use a Phase build whenever you plan to keep what you do.
+- **When it's up**, in *Start a beam…*: *Ask me* (the default), *Open a
+  terminal*, *Open it in tmux*, *Open the file browser only*, or *Nothing —
+  just start it* — `tsh beams add --no-console`'s choice, with this app's own
+  ways in beside it. The choice is remembered. Where tsh has it, *Share my
+  connected accounts* (on, as tsh's own default) passes your GitHub and other
+  connected accounts to the beam; unticked, `--no-share-connected-accounts`.
 - **+ New Phase…** offers *Build it from setups instead…* at the top, where tsh
   has `phase apply`, for anyone about to install tools by hand in a console. It
   builds one, from the default base image, **on top of a
@@ -3173,6 +3179,10 @@ in its own way, started with ServerLife's [MCP tools](MCP.md) so it can list
 hosts, open sessions, run your macros, read what a terminal shows and — when
 you allow it each time — type into one.
 
+- **On any side, at any size.** Right-click the panel's edge or its head bar
+  for *Left*, *Top*, *Right* or *Bottom* of the terminals; drag the edge as
+  far as you like, leaving the terminals a strip. Each side keeps its own
+  size, the same as the sidebar's.
 - **A check first.** What is missing — the tool, a sign-in, automation being
   off — is said, with a button that fixes each. *How each tool runs* sets it
   to run directly or through a launcher command you type, its model, and extra
@@ -3236,6 +3246,12 @@ each kind saying which tool takes it from there.
   marks every hit and steps between them, and buttons to copy or save the whole
   thing. It is the same text as GUIDE.md in the repository, bundled into the
   app so it works from a packaged build.
+- **The sidebar on any side, at any size.** (The AI panel moves the same way.) Drag its edge as far as you like —
+  the only limit is leaving the terminals a strip of the window. Right-click
+  that edge, or the Resources / Saved / Teleport tabs, for *Left*, *Top*,
+  *Right* or *Bottom* (also *Settings → Sidebar position*); across the top or
+  bottom it spans the window and the drag sets its height. Each side keeps its
+  own size.
 - **Resizable dialogs.** Network and certificate tools and this guide have a drag handle in the
   corner and remember the size you left them at — the useful shape depends on
   what is being read, not on what the dialog is.

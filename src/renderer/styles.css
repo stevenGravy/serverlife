@@ -235,10 +235,36 @@ input, textarea, select { font-family: inherit; font-size: inherit; color: inher
 #body { display: flex; flex: 1; min-height: 0; }
 
 #sidebar {
-  width: 260px; min-width: 170px; max-width: 460px;
+  width: 260px; min-width: 170px;
   display: flex; flex-direction: column;
   background: var(--panel); border-right: 1px solid var(--border);
 }
+/* The sidebar on another side (sidebarplace.js): the order flips, and across
+   the top or bottom it spans the window and is sized by its height. */
+#body[data-place="right"] { flex-direction: row-reverse; }
+#body[data-place="top"] { flex-direction: column; }
+#body[data-place="bottom"] { flex-direction: column-reverse; }
+#body[data-place="right"] > #sidebar { border-right: 0; border-left: 1px solid var(--border); }
+#body[data-place="top"] > #sidebar,
+#body[data-place="bottom"] > #sidebar { width: auto; min-width: 0; min-height: 120px; border-right: 0; }
+#body[data-place="top"] > #sidebar { border-bottom: 1px solid var(--border); }
+#body[data-place="bottom"] > #sidebar { border-top: 1px solid var(--border); }
+/* Above whatever the main area spills over it, so the edge can always be caught. */
+#sidebar-resizer, #ai-resizer { position: relative; z-index: 5; }
+/* The AI panel beside the terminals (sidebarplace.js's aiPlacement): it comes
+   after them, so right is the natural order and the others flip it. */
+#workspace[data-place="left"] { flex-direction: row-reverse; }
+#workspace[data-place="bottom"] { flex-direction: column; }
+#workspace[data-place="top"] { flex-direction: column-reverse; }
+#workspace[data-place="top"] > #ai-panel,
+#workspace[data-place="bottom"] > #ai-panel { width: auto; min-width: 0; min-height: 160px; }
+#workspace[data-place="left"] > #ai-panel { border-left: 0; border-right: 1px solid var(--border); }
+#workspace[data-place="top"] > #ai-panel { border-left: 0; border-bottom: 1px solid var(--border); }
+#workspace[data-place="bottom"] > #ai-panel { border-left: 0; border-top: 1px solid var(--border); }
+#workspace[data-place="top"] > #terminals,
+#workspace[data-place="bottom"] > #terminals { min-height: 0; }
+#body[data-place="top"] > #main,
+#body[data-place="bottom"] > #main { min-height: 0; }
 #sidebar.collapsed { display: none; }
 /* The host list's own text size (Settings, or ⌘+/⌘− while in it). Applied
    to what is inside the sidebar, not the sidebar, so its width is kept. */
@@ -1635,6 +1661,8 @@ input, textarea, select { font-family: inherit; font-size: inherit; color: inher
 }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
 .field textarea { resize: vertical; min-height: 58px; font-family: var(--mono); font-size: 12px; }
+/* An access request's reason is prose for a reviewer, not code. */
+.field textarea.request-reason { font-family: inherit; font-size: 13px; line-height: 1.45; min-height: 84px; }
 .field .hint { font-size: 10.5px; color: var(--muted); margin-top: 4px; }
 /*
  * A field's name, set apart from its hint. Both were 11px in the same muted

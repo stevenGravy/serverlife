@@ -1004,6 +1004,22 @@ export async function addBeam(profile, { phase: preselect = '' } = {}) {
     ? field('Delegate roles', el('div', { class: 'role-picks', style: 'display:flex;flex-wrap:wrap;gap:4px 14px' }, ...roleBoxes),
       'Tick the roles the beam should act with. None ticked: the cluster\u2019s default for beams.')
     : null;
+  /*
+   * What happens once it is up — the same choice `tsh beams add --no-console`
+   * makes, with this app's own ways in besides. Remembered, so someone who
+   * always wants tmux, or never wants anything opened, says so once.
+   */
+  const AFTER = [
+    { value: 'ask', label: 'Ask me' },
+    { value: 'terminal', label: 'Open a terminal' },
+    { value: 'tmux', label: 'Open it in tmux' },
+    { value: 'files', label: 'Open the file browser only' },
+    { value: 'none', label: 'Nothing — just start it (no console)' },
+  ];
+  const afterSel = select(AFTER, AFTER.some((o) => o.value === state.settings.beamAfterStart) ? state.settings.beamAfterStart : 'ask');
+  const shareBox = can.shareAccounts
+    ? checkbox('Share my connected accounts (GitHub and others) with the beam', state.settings.beamShareAccounts !== false)
+    : null;
   const phaseWrap = el('div');
   let phaseSel = null;
   if (canPhase) {
@@ -1070,6 +1086,8 @@ export async function addBeam(profile, { phase: preselect = '' } = {}) {
         ...(rolesField ? [rolesField] : []),
         field('Region', regionSel,
           'The cluster may put it somewhere else if the region you ask for is unavailable.'),
+        field('When it\u2019s up', afterSel),
+        ...(shareBox ? [shareBox] : []),
         saveNote,
         note);
     },
@@ -1084,11 +1102,17 @@ export async function addBeam(profile, { phase: preselect = '' } = {}) {
           note.textContent = phaseSel?.value
             ? `Starting a sandbox VM from ${phaseSel.value} — this takes a moment…`
             : 'Starting a sandbox VM — this takes a moment…';
+          const after = afterSel.value;
+          const share = shareBox ? shareBox.input.checked : undefined;
+          window.api.settings.set({ beamAfterStart: after, ...(shareBox ? { beamShareAccounts: share } : {}) })
+            .then((st) => { if (st) state.settings = st; }).catch(() => {});
           const r = await window.api.beams.add({
             proxy: profile.proxy, home: profile.homeDir, region: regionSel.value || undefined,
             phase: phaseSel?.value || undefined,
             roles: myRoles.filter((r, i) => roleBoxes[i].input.checked),
+            shareAccounts: share,
           }).catch((e) => ({ ok: false, error: e.message }));
+          if (r.ok) r.beam.after = after;
           busy = false;
           if (!r.ok) { note.textContent = ''; return toast(r.error || 'Could not start a beam', 'error', 9000); }
           close(r.beam);
@@ -1108,6 +1132,18 @@ export async function addBeam(profile, { phase: preselect = '' } = {}) {
 
   status(`Beam ${res.id} started in ${res.region}`, 8000);
   await refreshBeams();
+  const after = res.after || 'ask';
+  delete res.after;
+  if (after === 'none') return res;
+  if (after === 'terminal') { await openBeam(res); return res; }
+  if (after === 'files') { await openBeam(res, { filesOnly: true }); return res; }
+  if (after === 'tmux') {
+    const { tmuxNameFor } = await import('./sidebar.js');
+    const { openTmux } = await import('./tmux.js');
+    const host = beamHost(res);
+    await openTmux(host, { session: tmuxNameFor(host) });
+    return res;
+  }
   // Offering rather than opening: starting one and looking at the list is a
   // perfectly ordinary thing to want.
   if (await confirm({

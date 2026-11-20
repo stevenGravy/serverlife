@@ -624,6 +624,8 @@ export async function runLoginInShell(v, { title } = {}) {
         args,
         teleportHome,
         title: title || `tsh login · ${v.cluster || v.proxy}`,
+        // A login, not a place to work: nothing for a file browser to show beside it.
+        explorer: false,
         onExit: async (code) => {
           // Whatever it did, the inventory is the thing that knows: a successful
           // login shows up as a profile, a failed one as nothing changed.
@@ -1942,10 +1944,13 @@ async function openCreateRequest(p, prefill = {}) {
   let roles = [...(prefill.roles || [])];
   let resources = [...(prefill.resources || [])];
   let templateId = prefill.id || null;
-  const reasonIn = textInput({
+  // Room for a real explanation — a ticket, what is broken, for how long —
+  // and taller by dragging its corner; a reviewer reads all of it.
+  const reasonIn = el('textarea', {
+    class: 'request-reason', rows: '4',
     placeholder: reasonNeeded(p) ? 'Required by this cluster' : 'Why you need access',
-    value: prefill.reason || '',
   });
+  reasonIn.value = prefill.reason || '';
   /*
    * The cluster's own prompt, when it has one. A role can set
    * `request_prompt` — "Include a ticket or case reference" — and that

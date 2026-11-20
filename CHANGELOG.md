@@ -11,6 +11,41 @@ tagged `v<version>`.
 
 ---
 
+## [0.41.0] — 2026-11-20
+
+The sidebar and the AI panel on any side, at any size; more ways to start a
+beam; terminal links that open; and room to write a request's reason.
+
+### Added
+
+- **Start a beam: what happens once it is up** — ask, a terminal, tmux, the
+  file browser only, or nothing at all (no console), remembered — and *Share
+  my connected accounts*, which can now be turned off.
+- **The sidebar can sit on the top, right or bottom** as well as the left —
+  right-click its edge or its tabs, or *Settings → Sidebar position* — each
+  side keeping its own size.
+- **The AI panel can sit left, top or bottom of the terminals** as well as on
+  the right — right-click its edge or its head bar — at any size.
+
+### Changed
+
+- **The sidebar and the AI panel have no maximum size**: drag either as wide
+  (or, across the top or bottom, as tall) as leaves the terminals a strip.
+- **A `tsh login` tab opens without a file browser** — it is there for the
+  login, not for work.
+- **A request's reason has room** — a four-line box you can drag taller, in
+  the access request dialog and in a host's SSH options (the session reason
+  too), rather than one line.
+
+### Fixed
+
+- **A link a terminal program prints as text — Claude Code's, for one — did
+  nothing when clicked**: xterm asked "Do you want to navigate…?" and then
+  opened an empty window the app refused. It now asks as other links do,
+  showing the real address, and opens it in the browser.
+
+---
+
 ## [0.40.0] — 2026-11-19
 
 Helm uninstall with helm's own options and a list of what the cluster

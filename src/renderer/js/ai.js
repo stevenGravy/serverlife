@@ -2,6 +2,7 @@ import { state } from './state.js';
 import { el, $ } from './util.js';
 import { modal, toast, status, contextMenu, field, textInput, prompt as askText } from './ui.js';
 import { looksLikeQuestion, screenTail } from './aiwaiting.js';
+import { aiPlacement } from './sidebarplace.js';
 
 /**
  * AI assistants beside a session: Claude Code, Codex, GitHub Copilot CLI,
@@ -502,26 +503,18 @@ function ensurePanel() {
     state.setActivePane(pane.id);
     pane.view.focus?.();
   });
-  const width = Number(state.settings.aiPanelWidth) || 460;
-  node.style.width = `${Math.max(280, Math.min(1200, width))}px`;
   workspace.append(resizer, node);
-
-  // Drag the left edge; the width is kept for next time.
-  resizer.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = node.offsetWidth;
-    resizer.classList.add('dragging');
-    const move = (ev) => { node.style.width = `${Math.max(280, Math.min(window.innerWidth - 300, startW - (ev.clientX - startX)))}px`; };
-    const up = () => {
-      resizer.classList.remove('dragging');
-      document.removeEventListener('mousemove', move);
-      document.removeEventListener('mouseup', up);
-      window.api.settings.set({ aiPanelWidth: node.offsetWidth }).then((st) => { state.settings = st; }).catch(() => {});
+  /*
+   * Its side and size — left, top, right (the default) or bottom of the
+   * terminals, as big as leaves them a strip — are sidebarplace.js's, the
+   * same as the sidebar's. Right-click its edge or its head bar to move it.
+   */
+  aiPlacement.wire({
+    contextMenu, menuOn: ['#ai-panel .ai-head'],
+    refit: () => {
       activeSession?.pane.view.fitNow();
-    };
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', up);
+      for (const pid of state.panesOf(state.activeTabId)) state.getPane(pid)?.view.fitNow();
+    },
   });
   panel = { node, resizer, chips, body };
   return panel;

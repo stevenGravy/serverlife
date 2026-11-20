@@ -166,7 +166,13 @@ export async function openSshOptionsDialog(host, { login, hostPrefKey, focus = n
   const jump = textInput({ value: o.jumpHost || '', placeholder: 'user@bastion, or a chain: bastion1,user@bastion2:22' });
   const noShell = checkbox('Forwarding only \u2014 no shell (-N)', !!o.noShell);
   const extra = area(o.extraOptions, 'ServerAliveInterval=30 — any ssh -o option, one per line');
-  const reason = textInput({ value: o.reason || '', placeholder: 'INC-1234: disk full on /var' });
+  // Reasons are read by people — the session's, and a request's reviewer — so they get room.
+  const prose = (value, placeholder) => {
+    const t = el('textarea', { class: 'request-reason', rows: '3', placeholder });
+    t.value = value || '';
+    return t;
+  };
+  const reason = prose(o.reason, 'INC-1234: disk full on /var');
   const invite = textInput({ value: (o.invite || []).join(', '), placeholder: 'alice@example.com, bob' });
   const reqMode = select([
     { value: '', label: 'Cluster default' },
@@ -174,7 +180,7 @@ export async function openSshOptionsDialog(host, { login, hostPrefKey, focus = n
     { value: 'role', label: 'Request a role' },
     { value: 'off', label: 'Never' },
   ], o.requestMode || '');
-  const reqReason = textInput({ value: o.requestReason || '', placeholder: 'Why access is needed' });
+  const reqReason = prose(o.requestReason, 'Why access is needed');
   const noResume = checkbox('Do not resume the session after a network drop (--no-resume)', !!o.noResume);
   const problems = el('div', { class: 'hint', style: 'color:var(--red);white-space:pre-wrap;min-height:1em' });
   const warnEl = el('div', { class: 'hint', style: 'color:var(--muted);white-space:pre-wrap' });

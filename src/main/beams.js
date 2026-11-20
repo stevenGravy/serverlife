@@ -121,12 +121,15 @@ async function list({ proxy, home, all = false } = {}) {
  * connection machinery as everything else, so that the terminal it lands in
  * carries a file browser and a transfer queue like any other.
  */
-async function add({ proxy, home, region, phase, roles } = {}) {
+async function add({ proxy, home, region, phase, roles, shareAccounts } = {}) {
+  // --format=json never opens tsh's own console: this app connects (or not) itself.
   const rest = ['--format=json'];
   if (region) rest.push('--region=' + region);
   // Each only ever passed when addSupport() said this tsh takes it.
   if (phase) rest.push('--phase=' + phase);
   if (Array.isArray(roles) && roles.length) rest.push('--roles=' + roles.join(','));
+  // tsh shares them by default; only the refusal is ever spelled out.
+  if (shareAccounts === false) rest.push('--no-share-connected-accounts');
   // Creating a sandbox VM is not instant.
   const r = await run(argsFor('add', rest, { proxy }), { home, timeout: 300000 });
   const out = plain(r.stdout);
@@ -169,6 +172,8 @@ async function addSupport({ home, proxy } = {}) {
     phases: /--phase[=\s]/.test(help) && /\bls\b/.test(plain((phaseHelp.stdout || '') + (phaseHelp.stderr || '')))
       && !/expected command but got "phase"/.test(plain(phaseHelp.stderr || '')),
     roles: /--roles[=\s]/.test(help),
+    // Your GitHub and other connected accounts, handed to the beam unless refused.
+    shareAccounts: /share-connected-accounts/.test(help),
     // Newer than `tsh phase` itself: a multi-stage phase.yaml, copied files,
     // and starting a build without opening its console.
     apply: /\bphase apply\b/.test(phaseText),
