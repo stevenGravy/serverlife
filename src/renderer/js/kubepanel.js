@@ -2186,7 +2186,7 @@ async function kubeProxyMenuItem(c) {
  * to talk to, without the command having to name it. Same "program with no
  * Connection behind it" shape as a pod exec session (see openPodExec).
  */
-async function openEcosystemShell(c, tool) {
+export async function openEcosystemShell(c, tool) {
   // On a per-session-MFA cluster, k9s (or anything else run here) would
   // otherwise make its own many separate kubectl-equivalent calls straight
   // through the exec-plugin kubeconfig, each its own MFA ceremony — the
@@ -2218,7 +2218,13 @@ async function openEcosystemShell(c, tool) {
   // writing it into the merged config... except kubeconfig has no per-env
   // override for that either. Simplest honest answer: name it in the title
   // and leave `--context=` to be typed, the same as a fresh terminal would.
-  await openLocalShell(null, { env, title });
+  const pane = await openLocalShell(null, { env, title });
+  const { attachCloudHelper } = await import('./sidebar.js');
+  attachCloudHelper(pane, {
+    cloud: 'K8s',
+    name: c.kubeClusterName || c.name,
+    contextArg: spec.viaProxy ? '' : contextArgs.join(' '),
+  });
   toast(spec.viaProxy
     ? 'KUBECONFIG set to the tsh proxy kube tunnel — already the only context in it'
     : `KUBECONFIG set — add --context=${c.contextName} to kubectl/helm commands here`, 'info');

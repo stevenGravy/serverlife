@@ -402,6 +402,32 @@ function findTctl() {
   return tctlPathCache;
 }
 
+let teleportPathCache = null;
+
+/**
+ * `teleport` — beside `tsh` first, same reasoning as `findTctl()`. Used only
+ * for running a Database Service agent locally (dbagent.js) — everything
+ * else here is `tsh`/`tctl`.
+ */
+function findTeleport() {
+  if (teleportPathCache) return teleportPathCache;
+  const bare = WINDOWS ? 'teleport.exe' : 'teleport';
+  try {
+    const beside = path.join(path.dirname(findTsh()), bare);
+    if (fs.existsSync(beside)) { teleportPathCache = beside; return teleportPathCache; }
+  } catch { /* unreadable path: try PATH instead */ }
+  try {
+    const cmd = WINDOWS ? 'where' : 'which';
+    const out = require('child_process').execFileSync(cmd, ['teleport'], {
+      timeout: 5000, encoding: 'utf8', env: tshEnv(null), windowsHide: true,
+    });
+    const first = String(out || '').split(/\r?\n/).map((x) => x.trim()).filter(Boolean)[0];
+    if (first && fs.existsSync(first)) { teleportPathCache = first; return teleportPathCache; }
+  } catch { /* not on PATH either: the bare name is the last resort */ }
+  teleportPathCache = bare;
+  return teleportPathCache;
+}
+
 /**
  * A join token for a new agent — `tctl tokens add --type=<type> --ttl=<ttl>`.
  *
@@ -489,6 +515,28 @@ async function createJoinToken({ type, ttl = '1h', proxy, home, cluster } = {}) 
   // token itself — the last non-blank line, not the whole paragraph.
   const token = r.stdout.split('\n').map((l) => l.trim()).filter(Boolean).pop();
   return token ? { ok: true, token, cluster: answered } : { ok: false, error: 'tctl printed no token' };
+}
+
+/**
+ * A CA-signed server certificate for a self-hosted database —
+ * `tctl auth sign --format=db --host=<host> --out=<out>`. Unlike an SSH
+ * node or a Kubernetes agent, Database Access for a self-hosted database
+ * needs the database's *own* TLS config to trust Teleport's CA — this is
+ * the officially documented way to get that certificate, confirmed
+ * directly: the three files it writes are exactly what postgresql.conf's
+ * `ssl_cert_file`/`ssl_key_file`/`ssl_ca_file` (or MySQL's `ssl-cert`/
+ * `ssl-key`/`ssl-ca`) point at.
+ */
+async function signDbCert({ host, out, ttl = '8760h', proxy, home } = {}) {
+  if (!proxy) return { ok: false, error: 'No Teleport cluster given to sign the certificate on.' };
+  if (!host) return { ok: false, error: 'No database host to sign the certificate for.' };
+  if (!out) return { ok: false, error: 'No output path given for the certificate.' };
+  // --overwrite: re-running the wizard (a renewed cert, a retried onboard)
+  // hits the same --out path and tctl otherwise prompts "Overwrite? [y/N]"
+  // on a non-interactive stdin, which just fails.
+  const r = await tctlRun(['auth', 'sign', '--format=db', '--host=' + host, '--out=' + out, '--ttl=' + ttl, '--overwrite'], { proxy, home, timeout: 30000 });
+  if (!r.ok) return { ok: false, error: r.stderr || r.stdout || 'tctl auth sign failed' };
+  return { ok: true, output: r.stdout, cert: out + '.crt', key: out + '.key', ca: out + '.cas' };
 }
 
 function runTsh(args, opts = {}) {
@@ -2167,4 +2215,5 @@ module.exports = {
   listRecordings, listActiveSessions, playArgs, latencyArgs, webSessionUrl, webClusterUrl, playText, searchRecordings,
   toRecordingDate,
   findTctl, createJoinToken, nodeInstallCommand,
+  findTeleport, signDbCert,
 };

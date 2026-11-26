@@ -6,9 +6,9 @@ import {
 } from './clustermarks.js';
 import { decodeMenu } from './nettools.js';
 import { state, tpKey } from './state.js';
-import { $, $$, el, clear, debounce, HOST_COLORS, colorCss } from './util.js';
+import { $, $$, el, clear, debounce, HOST_COLORS, colorCss, fmtDuration } from './util.js';
 import { toast, status, contextMenu, modal, prompt, confirm, field, textInput, select } from './ui.js';
-import { openHost, splitActivePane, registerSidebarHelpers } from './sessions.js';
+import { openHost, splitActivePane, openLocalShell, sendToPane, refreshPaneTitles, registerSidebarHelpers } from './sessions.js';
 import { sshOptionsMenu } from './sshoptions.js';
 import { openProfileEditor } from './profiles.js';
 import { hostStyleMenu } from './panestyle.js';
@@ -60,9 +60,53 @@ import {
 
 let activeSbTab = 'hosts';
 let savedView = 'profiles';
-// All/SSH/K8s — which kind of resource the Resources (Hosts) tab shows.
-// Only reachable, and only shown, while KubeLife is enabled.
-let hostKindFilter = 'all';
+// SSH / K8s / Apps / DB — independent on/off segments for the Resources
+// (Hosts) tab, not a mutually-exclusive choice: any combination can be on
+// at once, and switching focus to one does not turn the others off. Apps
+// and DB default off (opened on demand, never taking over the sidebar);
+// SSH and K8s default on, matching the old "All" behaviour. K8s is only
+// reachable while KubeLife is enabled (applyKubeEnabledSetting below).
+let activeKinds = new Set(['ssh', 'kube']);
+
+/*
+ * Which database tunnels are actually open right now, polled while the DB
+ * segment is on — otherwise invisible. Test and Connect both leave a
+ * tunnel running in the background on purpose (dbproxy.js reuses it next
+ * time), and an exported launcher's tunnel is a second, separate process
+ * ServerLife has no other record of at all — confirmed live, both were a
+ * genuine "wait, is something still running?" question with no answer on
+ * screen.
+ */
+let tunnelStatus = { proxy: [], exported: [] };
+let tunnelPollTimer = null;
+
+async function refreshTunnelStatus() {
+  try {
+    const [proxy, exported] = await Promise.all([window.api.db.proxyStatus(), window.api.db.exportStatus()]);
+    tunnelStatus = { proxy, exported };
+  } catch { /* transient — next poll tries again */ }
+  if (activeKinds.has('db')) renderSidebar();
+}
+
+function ensureTunnelPolling() {
+  if (!activeKinds.has('db')) return;
+  refreshTunnelStatus();
+  if (tunnelPollTimer) return;
+  tunnelPollTimer = setInterval(() => {
+    if (!activeKinds.has('db')) { clearInterval(tunnelPollTimer); tunnelPollTimer = null; return; }
+    refreshTunnelStatus();
+  }, 5000);
+}
+
+/** A tunnel for this exact (database, cluster) right now — either dbproxy's managed one or an exported launcher's. */
+function tunnelFor(d, profile) {
+  const managed = tunnelStatus.proxy.find((t) => t.resourceName === d.name && t.proxy === profile.proxy);
+  if (managed) return { kind: 'proxy', ...managed };
+  const exported = tunnelStatus.exported.find((t) => t.resourceName === d.name);
+  if (exported) return { kind: 'exported', ...exported };
+  return null;
+}
+
 let filterText = '';
 /*
  * The filter as something that can be asked of a host. Compiled once per
@@ -148,8 +192,18 @@ export function initSidebar() {
   });
 
   $$('.sb-kind-tab').forEach((btn) => {
-    btn.addEventListener('click', () => setHostKind(btn.dataset.kind));
+    btn.addEventListener('click', () => toggleHostKind(btn.dataset.kind));
   });
+
+  // Which of SSH/K8s/Apps/DB were on last time, kept in settings the same
+  // way sidebarClosedGroups remembers closed groups — a restart opens the
+  // sidebar the way it was left rather than always back to SSH+K8s.
+  if (Array.isArray(state.settings.sidebarKinds)) {
+    const restored = state.settings.sidebarKinds.filter((k) => ['ssh', 'kube', 'apps', 'db'].includes(k));
+    activeKinds = new Set(restored.length ? restored : ['ssh']);
+    $$('#sidebar .sb-kind-tab').forEach((b) => b.classList.toggle('active', activeKinds.has(b.dataset.kind)));
+  }
+  ensureTunnelPolling();
 
   state.on('kubeContexts', () => { if (activeSbTab === 'hosts') renderSidebar(); });
 
@@ -421,31 +475,42 @@ export function renderSidebar() {
   updateStatusBar();
 }
 
-/** Which kind of resource the Resources tab is currently filtered to. */
 /**
- * All / SSH / K8s — one choice for the sidebar and every Hosts pane, set
- * from either: a pane showing something other than the list beside it read
- * as the filter not working.
+ * Flip one of SSH / K8s / Apps / DB on or off, independently of the others —
+ * set from either a pane showing something other than the list beside it
+ * read as the filter not working.
  */
-export function setHostKind(kind) {
-  hostKindFilter = ['all', 'ssh', 'kube'].includes(kind) ? kind : 'all';
-  $$('#sidebar .sb-kind-tab').forEach((b) => b.classList.toggle('active', b.dataset.kind === hostKindFilter));
+export function toggleHostKind(kind) {
+  if (!['ssh', 'kube', 'apps', 'db'].includes(kind)) return;
+  if (activeKinds.has(kind)) activeKinds.delete(kind); else activeKinds.add(kind);
+  $$('#sidebar .sb-kind-tab').forEach((b) => b.classList.toggle('active', activeKinds.has(b.dataset.kind)));
   renderSidebar();
   import('./hostspane.js').then((m) => m.refreshHostsPanes?.()).catch(() => {});
+  if (kind === 'db') ensureTunnelPolling();
+  const sidebarKinds = [...activeKinds];
+  state.settings = { ...state.settings, sidebarKinds };
+  window.api.settings.set({ sidebarKinds }).catch(() => {});
 }
 
+/** The current on/off state of each segment, K8s forced off while KubeLife itself is disabled. */
 export function hostKindShown() {
-  return state.settings.kubeEnabled === false ? 'ssh' : hostKindFilter;
+  return {
+    ssh: activeKinds.has('ssh'),
+    kube: activeKinds.has('kube') && state.settings.kubeEnabled !== false,
+    apps: activeKinds.has('apps'),
+    db: activeKinds.has('db'),
+  };
 }
 
 /**
- * The All/SSH/K8s filter row only makes sense on the Resources tab, and only
- * while KubeLife is on — otherwise there is nothing for "K8s" or "All" to
- * mean, and it should not be on screen taking up a line for one option.
+ * The SSH/K8s/Apps toggle row only makes sense on the Resources tab. The K8s
+ * button itself is hidden on top of that while KubeLife is disabled —
+ * Apps and SSH stay independent of that setting.
  */
 function updateKubeFilterVisibility() {
-  const show = activeSbTab === 'hosts' && state.settings.kubeEnabled !== false;
+  const show = activeSbTab === 'hosts';
   $('#sb-kind-filter')?.classList.toggle('hidden', !show);
+  document.querySelector('.sb-kind-tab[data-kind="kube"]')?.classList.toggle('hidden', state.settings.kubeEnabled === false);
 }
 
 /**
@@ -458,11 +523,14 @@ function updateKubeFilterVisibility() {
  */
 export function applyKubeEnabledSetting() {
   const on = state.settings.kubeEnabled !== false;
-  // Switched off while filtered to K8s: there is nothing left to show it, so
-  // fall back to the full list rather than an empty one with no visible cause.
-  if (!on && hostKindFilter === 'kube') {
-    hostKindFilter = 'all';
-    document.querySelector('.sb-kind-tab[data-kind="all"]')?.classList.add('active');
+  if (!on) {
+    activeKinds.delete('kube');
+    // Switched off while K8s was the only thing shown: there is nothing left
+    // to show, so fall back to SSH rather than an empty list with no visible cause.
+    if (!activeKinds.size) {
+      activeKinds.add('ssh');
+      document.querySelector('.sb-kind-tab[data-kind="ssh"]')?.classList.add('active');
+    }
     document.querySelector('.sb-kind-tab[data-kind="kube"]')?.classList.remove('active');
   }
   updateKubeFilterVisibility();
@@ -1459,16 +1527,15 @@ let dragFolder = null;
  * leaves every folder holding only its prod machines.
  */
 /**
- * Whether a row belongs under the All/SSH/K8s filter. Live rows are already
+ * Whether a row belongs under the SSH/K8s toggles. Live rows are already
  * split by kind where they are built; ghosts drawn from watch records are
  * not, and a kube watch record carries its `kube:` id rather than a kind.
  */
 function inKindShown(h) {
   const k = hostKindShown();
-  if (k === 'all') return true;
   const isKube = h.kind === 'kube' || h.kind === 'kube_cluster' || /^kube:/.test(h.id || '')
     || /\/kube_cluster\//.test(h.resourceId || '');
-  return k === 'kube' ? isKube : !isKube;
+  return isKube ? k.kube : k.ssh;
 }
 
 function groupRows(groupKey, hosts, labelFor) {
@@ -2374,6 +2441,16 @@ function openGroupMenu(x, y, key, title, profile) {
       label: 'Refresh this cluster',
       title: 'Its nodes, the clusters it trusts and its beams — nothing else',
       onClick: () => refreshProfile(profile),
+    } : null,
+    profile ? {
+      label: 'Go to Grafana…',
+      title: 'Open this cluster’s Grafana app, searching its dashboards for this cluster’s name',
+      onClick: () => openGrafanaFor(profile.cluster || profile.proxy, profile),
+    } : null,
+    profile ? {
+      label: 'Cloud sessions…',
+      title: 'Every AWS/Azure/GCP CLI proxy running right now, across every cluster — not just this one',
+      onClick: () => openCloudSessionsPanel(),
     } : null,
     isSshGroup ? {
       label: 'New host in this config…', icon: '+',
@@ -4919,7 +4996,7 @@ function renderHostsTab() {
    * worse than naming a host twice. The group is orderable and collapsible
    * like any other, so it can be pushed down or shut if it stops being useful.
    */
-  const starred = kindShown !== 'kube' && starredMode() === 'group' ? starredHosts().filter(visibleHost) : [];
+  const starred = kindShown.ssh && starredMode() === 'group' ? starredHosts().filter(visibleHost) : [];
   if (starred.length) {
     panel.append(group('Starred', starred.length, 'starred',
       starred.map((h) => hostRow(h, h.type === 'teleport' ? labelSummary(h) : (h.viaTsh ? 'tsh' : h.user), 'starred')),
@@ -4960,8 +5037,8 @@ function renderHostsTab() {
     // this same list, the same folders (by hand or by a label rule) and the
     // same filter box as the SSH nodes beside them, rather than a second
     // tree with its own rules to learn.
-    const kubeHosts = kindShown === 'ssh' ? [] : kubeHostsForProfile(p);
-    const sshHosts = kindShown === 'kube' ? [] : [...reachable, ...held, ...askable.filter((h) => !have.has(h.uuid))];
+    const kubeHosts = !kindShown.kube ? [] : kubeHostsForProfile(p);
+    const sshHosts = !kindShown.ssh ? [] : [...reachable, ...held, ...askable.filter((h) => !have.has(h.uuid))];
     const shown = [...sshHosts, ...kubeHosts].filter(visibleHost);
     if (p.expired) {
       /*
@@ -4987,7 +5064,7 @@ function renderHostsTab() {
        */
       const listMode = state.settings.expiredListMode || 'off';
       let lastKnown = [];
-      if (listMode !== 'off' && kindShown !== 'kube') {
+      if (listMode !== 'off' && kindShown.ssh) {
         const maxAgeMs = listMode === 'always'
           ? null
           : (Number(state.settings.expiredListHours) || 1) * 3600000;
@@ -5117,12 +5194,34 @@ function renderHostsTab() {
       panel.append(g);
       continue;
     }
-    const beamRows = kindShown === 'kube' ? [] : beamSection(p);
+    const beamRows = !kindShown.ssh ? [] : beamSection(p);
     // "K8s only": a cluster with no kube clusters of its own has nothing to
     // show here at all, not even an empty heading. (shown is kube-only
-    // already, in that mode — see where it is built, above.)
-    if (kindShown === 'kube' && !shown.length) continue;
-    if (!shown.length && !beamRows.length && filterText) continue;
+    // already, in that mode — see where it is built, above.) Apps and DB are
+    // the exception: "Apps only" or "DB only" (SSH and K8s both off) must
+    // not skip the whole cluster — their nested groups are still there to
+    // show even with zero hosts.
+    if (!kindShown.ssh && !shown.length && !kindShown.apps && !kindShown.db) continue;
+    if (!shown.length && !beamRows.length && !kindShown.apps && !kindShown.db && filterText) continue;
+
+    // Apps and DB nest inside the cluster's own group, same as beams above —
+    // a cluster's apps/databases belong to that cluster, not floating beside
+    // it as a second top-level heading.
+    let appsRow = null;
+    if (kindShown.apps) {
+      const appsKey = `apps:${groupKeyFor(p)}`;
+      const info = appsFor(p);
+      if (!info) refreshAppsFor(p);
+      appsRow = appsGroup(p, appsKey, info);
+    }
+    let dbRow = null;
+    if (kindShown.db) {
+      const dbKey = `db:${groupKeyFor(p)}`;
+      const info = dbFor(p);
+      if (!info) refreshDbFor(p);
+      dbRow = dbGroup(p, dbKey, info);
+    }
+
     panel.append(group(
       p.cluster || p.proxy, shown.length, groupKeyFor(p),
       [
@@ -5136,12 +5235,19 @@ function renderHostsTab() {
           const rows = groupRows(groupKeyFor(p), shown, (n) => labelSummary(n));
           const note = narrowedNote(p, reachable.length);
           if (note) rows.unshift(note);
-          return rows.length ? rows : [el('div', {
+          // "Apps only" (SSH and K8s both off): there is nothing host-shaped
+          // to report missing — the empty-state text below is about hosts,
+          // and would be noise next to a cluster shown only for its apps.
+          if (rows.length) return rows;
+          if (!kindShown.ssh && !kindShown.kube) return [];
+          return [el('div', {
             class: 'sb-empty',
-            text: kindShown === 'kube' ? 'No Kubernetes clusters visible.' : 'No nodes visible.',
+            text: !kindShown.ssh ? 'No Kubernetes clusters visible.' : 'No nodes visible.',
           })];
         })(),
         ...beamRows,
+        appsRow,
+        dbRow,
       ],
       // Which home a cluster came from sits alongside the active marker: with
       // the same cluster in two homes, the name alone does not say which. The
@@ -5230,7 +5336,7 @@ function renderHostsTab() {
   // ssh_config hosts are SSH-only, so "K8s only" leaves them out. The Local
   // group below is not: a local shell, the AI assistants and the network
   // tools are as much for working on a cluster as on a server.
-  if (kindShown !== 'kube') {
+  if (kindShown.ssh) {
   // SSH config hosts
   const sshShown = state.sshHosts.filter(visibleHost);
   /*
@@ -5414,11 +5520,11 @@ function renderHostsTab() {
 
   const aiRows = localAiRows();
   // SSH keys and certificates are the one row in Local about SSH alone.
-  const localRows = [localRow, ...aiRows, kindShown === 'kube' ? null : keysRow, netRow].filter(Boolean);
+  const localRows = [localRow, ...aiRows, !kindShown.ssh ? null : keysRow, netRow].filter(Boolean);
   panel.append(group('Local', localRows.length, 'local', localRows));
 
   // Watched SSH hosts with nowhere left to be drawn: not in "K8s only" either.
-  if (kindShown !== 'kube') {
+  if (kindShown.ssh) {
 
   /*
    * And the watched hosts with nowhere left to be drawn.
@@ -5458,11 +5564,11 @@ function renderHostsTab() {
           text: `${unsureN} unchecked`,
         }) : null)));
   }
-  } // if (kindShown !== 'kube')
+  } // if (kindShown.ssh)
 
   // Contexts with no Teleport cluster behind them at all (raw EKS/GKE/kind,
   // etc.) — everything else is nested inside its own cluster's group above.
-  if (kindShown !== 'ssh') {
+  if (kindShown.kube) {
     const rows = kubeGroupRows();
     if (rows.length) panel.append(group('☸ Local kubeconfigs', kubeGroupCount(), 'kube-local', rows));
   }
@@ -5485,6 +5591,1157 @@ function applyGroupOrder(panel) {
     return marker;
   });
   slots.forEach((marker, i) => panel.replaceChild(ordered[i], marker));
+}
+
+/* ------------------------------------------------------------------ */
+/* Application Access — the "Apps" segment.                            */
+/*                                                                      */
+/* Deliberately not merged into the host tree above: apps are not SSH/  */
+/* kube hosts, are never drag sources or targets for folders, and only  */
+/* render at all while the Apps toggle (kindShown.apps) is on, same as  */
+/* the SSH/K8s toggles beside it — see toggleHostKind/hostKindShown.    */
+/* ------------------------------------------------------------------ */
+
+const appsCache = new Map();   // proxy -> { apps, error }
+const appsLoading = new Set();
+
+function appsFor(profile) {
+  return appsCache.get(profile.proxy) || null;
+}
+
+function refreshAppsFor(profile) {
+  if (!profile?.proxy || appsLoading.has(profile.proxy)) return;
+  appsLoading.add(profile.proxy);
+  window.api.apps.list({ proxy: profile.proxy }).then((apps) => {
+    appsCache.set(profile.proxy, { apps, error: null });
+  }).catch((e) => {
+    appsCache.set(profile.proxy, { apps: [], error: e.message });
+  }).finally(() => {
+    appsLoading.delete(profile.proxy);
+    if (activeKinds.has('apps')) renderSidebar();
+  });
+}
+
+/**
+ * Logged-in-or-not per app, cached per cluster — one bulk `tsh`-free fs
+ * check (see appsproxy.js's loginStatuses) rather than a round trip per
+ * row. Shared by the sidebar's own Apps group and appspane.js, since both
+ * draw rows with `appRow` and both want the same answer.
+ */
+const loginCache = new Map();   // proxy\0home\0cluster -> { [name]: {loggedIn, validUntil} }
+const loginLoading = new Set();
+
+function loginKey(profile) {
+  return `${profile.proxy}\u0000${profile.homeDir || ''}\u0000${profile.cluster || ''}`;
+}
+
+export function loginStatusFor(app, profile) {
+  return loginCache.get(loginKey(profile))?.[app.name] || null;
+}
+
+/**
+ * Fill the cache for a list of apps on one cluster, then redraw whoever is
+ * showing them. Skips a cluster already in the cache unless `force` is set
+ * — otherwise every render would see its own fetch land, redraw, and ask
+ * again. A caller that just changed the answer (a Log in that succeeded)
+ * passes `force: true` so the row updates immediately rather than waiting
+ * for whatever next triggers an unrelated redraw.
+ */
+export function refreshAppsLoginStatuses(profile, names, { force = false } = {}) {
+  if (!profile?.proxy || !profile?.username || !profile?.cluster) return;
+  const key = loginKey(profile);
+  if (loginLoading.has(key)) return;
+  if (!force && loginCache.has(key)) return;
+  loginLoading.add(key);
+  window.api.apps.loginStatuses({
+    proxy: profile.proxy, home: profile.homeDir || null,
+    username: profile.username, cluster: profile.cluster, names,
+  }).then((r) => {
+    loginCache.set(key, r);
+  }).catch(() => {}).finally(() => {
+    loginLoading.delete(key);
+    if (activeKinds.has('apps')) renderSidebar();
+    import('./appspane.js').then((m) => m.refreshAppsPanes()).catch(() => {});
+  });
+}
+
+const TRANSPORT_ICON = { http: '\u{1F310}', tcp: '⇄', cloud: '☁', mcp: '\u{1F9E9}' };
+
+/**
+ * `tagStrip`'s own "+N more" opens `openHostTagsDialog`, which is built to
+ * edit a *host's* labels — not meaningful for a read-only Teleport app
+ * resource, so apps get their own minimal chip strip rather than reusing
+ * that dialog. Same chips, same click-to-filter, no overflow dialog.
+ */
+function appTagStrip(app, tags) {
+  const strip = el('div', { class: 'sb-tags' });
+  const ordered = orderForStrip(tags);
+  const shown = ordered.slice(0, STRIP_LIMIT);
+  for (const [k, v] of shown) {
+    const term = termFor(k, v);
+    const on = hasTerm(filterText, term);
+    const chip = el('button', {
+      class: 'chip' + (on ? ' on' : ''),
+      title: on ? `${k} = ${v}\nClick to remove from the filter` : `${k} = ${v}\nClick to filter by it`,
+      onClick: (e) => { e.stopPropagation(); filterByTag(k, v); },
+    },
+      el('span', { class: 'k', text: k }),
+      el('span', { class: 'v', text: v || '—' }));
+    strip.append(chip);
+  }
+  const hidden = tags.length - shown.length;
+  if (hidden > 0) strip.append(el('span', { class: 'chip more', text: `+${hidden} more` }));
+  return strip;
+}
+
+/**
+ * Which identity an AWS app's CLI shell will actually run as — asked up
+ * front, not left implicit. `tsh apps login` refuses an AWS app with more
+ * than one IAM role unless told which (`--aws-role`); with exactly one, that
+ * one is used without asking, since there is nothing to choose. Returns
+ * `null` for "cancelled" and `''` for "this app has no roles to pick from".
+ */
+async function pickAwsRole(app, profile) {
+  const roles = await window.api.apps.awsRoles(app.name, { proxy: profile.proxy });
+  if (!roles.length) return '';
+  if (roles.length === 1) return roles[0].name;
+  const roleSelect = select(roles.map((r) => ({ value: r.name, label: `${r.name} — ${r.arn}` })), roles[0].name);
+  const chosen = await modal({
+    title: `Which role on ${app.name}?`,
+    subtitle: 'This AWS app offers more than one IAM role — tsh needs to know which to assume.',
+    render: (body) => body.append(field('IAM role', roleSelect)),
+    buttons: [
+      { label: 'Cancel', value: null },
+      { label: 'Continue', class: 'primary-btn', onClick: ({ close }) => close(roleSelect.value) },
+    ],
+  });
+  return chosen ?? null;
+}
+
+/**
+ * The GCP equivalent of `pickAwsRole` — caught live against a real app
+ * (`google-cloud-cli` on a real cluster) refusing ambiguously with two
+ * service accounts, the exact GCP shape of AWS's multi-role refusal, with
+ * no identity picker built for it until this.
+ */
+async function pickGcpServiceAccount(app, profile) {
+  const accounts = await window.api.apps.gcpAccounts(app.name, { proxy: profile.proxy });
+  if (!accounts.length) return '';
+  if (accounts.length === 1) return accounts[0];
+  const accountSelect = select(accounts.map((a) => ({ value: a, label: a })), accounts[0]);
+  const chosen = await modal({
+    title: `Which service account on ${app.name}?`,
+    subtitle: 'This GCP app offers more than one service account — tsh needs to know which to assume.',
+    render: (body) => body.append(field('Service account', accountSelect)),
+    buttons: [
+      { label: 'Cancel', value: null },
+      { label: 'Continue', class: 'primary-btn', onClick: ({ close }) => close(accountSelect.value) },
+    ],
+  });
+  return chosen ?? null;
+}
+
+/** AWS's IAM role, or GCP's service account — whichever this cloud needs disambiguated, or '' if neither applies. */
+async function pickCloudIdentity(app, profile) {
+  if (app.cloud === 'AWS') return pickAwsRole(app, profile);
+  if (app.cloud === 'GCP') return pickGcpServiceAccount(app, profile);
+  return '';
+}
+
+/**
+ * Start (or reuse) the Azure/GCP/AWS CLI tunnel for one app — see
+ * `appsproxy.ensureCloudCli()` — then drop a local shell into it with the
+ * tunnel's env already set. Opened as a split beside whatever pane is
+ * active, same as any other host (`splitActivePane`'s `local`/`env`
+ * options already exist for exactly this — an AI assistant's own session
+ * config takes the same path in `local.js`'s `open()`), so a cloud CLI
+ * shell lands beside the SSH/kube/db session it's being used alongside
+ * instead of forcing a new tab. Only opens a fresh tab when nothing is open
+ * yet to split beside.
+ *
+ * Logs in explicitly first (`appsproxy.loginCloud`) rather than assuming a
+ * prior login elsewhere — for AWS that means resolving (and, with more than
+ * one, asking) the IAM role before anything opens, so which identity the
+ * shell runs as is never a guess. A banner line is written into the pane
+ * itself once it opens, naming the app, the role (AWS) and the proxy, so
+ * that stays visible in the terminal rather than only flashing past as a
+ * status line.
+ */
+/**
+ * Resolve (and, for AWS with more than one, ask) the identity, log in, and
+ * hand back the env and a one-line description of who it is — shared by
+ * every action that needs a cloud app's credentials, so "open a shell",
+ * "copy the variables" and "send them to this pane" always agree on which
+ * role was used rather than three separate places guessing.
+ */
+async function resolveCloudLogin(app, profile) {
+  const identity = await pickCloudIdentity(app, profile);
+  if (identity === null) return null; // the identity picker was cancelled
+  status(`Logging in to ${app.name}…`, 0);
+  const loginResult = await window.api.apps.cloudLogin(app, identity || null, { proxy: profile.proxy });
+  const resolvedRole = app.cloud === 'Azure' ? '' : (loginResult?.role || identity || '');
+  const env = await window.api.apps.cloudCli(app, { proxy: profile.proxy });
+  const shellEnv = Object.fromEntries(Object.entries(env).filter(([k]) => k !== 'app' && k !== 'cloud'));
+  // GCP only: catch a token-minting failure before opening a shell that
+  // would just fail the same way on every command typed into it — see
+  // verifyCloudCli()'s own comment for why this is GCP-specific. Shown
+  // explicitly because it can take up to 45s (gcloud's own retry/backoff
+  // on the failure this is checking for) — caught live looking exactly
+  // like a hang with nothing said while it ran.
+  if (app.cloud === 'GCP') status(`Checking GCP access for ${app.name}… this can take up to 45s`, 0);
+  const verify = await window.api.apps.verifyCloudCli(app.cloud, shellEnv);
+  if (!verify.ok) throw new Error(verify.error);
+  status('');
+  const identityWord = app.cloud === 'GCP' ? 'service account' : 'role';
+  const identityLine = resolvedRole
+    ? `${app.cloud} CLI — ${app.name}, ${identityWord} ${resolvedRole}, via ${profile.cluster || profile.proxy}`
+    : `${app.cloud} CLI — ${app.name}, via ${profile.cluster || profile.proxy}`;
+  return { role: resolvedRole, env: shellEnv, identityLine };
+}
+
+/**
+ * The common commands worth one click per cloud — not exhaustive, the ones
+ * reached for first: who the session is, and the handful of resource
+ * listings that come up before anything more specific does.
+ */
+const CLOUD_COMMANDS = {
+  AWS: [
+    { label: 'Who am I', command: 'aws sts get-caller-identity' },
+    { label: 'S3 buckets', command: 'aws s3 ls' },
+    { label: 'EC2 instances', command: 'aws ec2 describe-instances --query "Reservations[].Instances[].{ID:InstanceId,State:State.Name,Type:InstanceType}" --output table' },
+    { label: 'IAM roles', command: 'aws iam list-roles --query "Roles[].RoleName" --output table' },
+    { label: 'Current region', command: 'aws configure get region' },
+  ],
+  GCP: [
+    { label: 'Who am I', command: 'gcloud auth list' },
+    { label: 'Projects', command: 'gcloud projects list' },
+    { label: 'Compute instances', command: 'gcloud compute instances list' },
+    { label: 'Storage buckets', command: 'gcloud storage buckets list' },
+    { label: 'Current config', command: 'gcloud config list' },
+  ],
+  Azure: [
+    { label: 'Who am I', command: 'az account show' },
+    { label: 'Resource groups', command: 'az group list -o table' },
+    { label: 'VMs', command: 'az vm list -o table' },
+    { label: 'Storage accounts', command: 'az storage account list -o table' },
+    { label: 'Current subscription', command: 'az account show --query name -o tsv' },
+  ],
+  K8s: [
+    { label: 'Who am I', command: 'kubectl auth can-i --list' },
+    { label: 'Current context', command: 'kubectl config current-context' },
+    { label: 'Pods (all namespaces)', command: 'kubectl get pods -A' },
+    { label: 'Nodes', command: 'kubectl get nodes' },
+    { label: 'Namespaces', command: 'kubectl get namespaces' },
+  ],
+  // Not wired to anything yet — Database Access itself is still unbuilt
+  // (see DATABASE_ACCESS_ROADMAP.md), so there is no session for this to
+  // attach to. Kept ready for when that exists, same shape as the rest.
+  Database: [
+    { label: 'Who am I', command: 'SELECT current_user;' },
+    { label: 'Tables', command: '\\dt' },
+    { label: 'Databases', command: '\\l' },
+    { label: 'Current database', command: 'SELECT current_database();' },
+  ],
+};
+
+/**
+ * Appended to `pane.body` as its own element — the same shape
+ * `makeHostsPane`/`makeKubeBrowserPane` already use for pane-specific
+ * content — rather than reusing `.pane-files`, which (caught live) is not
+ * an empty slot on a local pane: every pane carries its own real file
+ * explorer there, and writing over it only lasted until that explorer's
+ * own init ran and replaced it right back.
+ */
+export function attachCloudHelper(pane, app) {
+  if (!pane?.body) return;
+  const commands = CLOUD_COMMANDS[app.cloud] || [];
+  // A K8s shell's kubeconfig can hold more than one context with none of
+  // them current (see openEcosystemShell's own plain-shell case in
+  // kubepanel.js) — app.contextArg carries whatever that caller needs
+  // appended (`--context=foo`, or '' when the kubeconfig already has
+  // exactly one). Other clouds never set this.
+  const withContext = (command) => (app.contextArg ? `${command} ${app.contextArg}` : command);
+  const run = (command) => sendToPane(pane, withContext(command).replace(/\n*$/, '') + '\n');
+  const customInput = textInput({ placeholder: { AWS: 'aws ...', GCP: 'gcloud ...', Azure: 'az ...', K8s: 'kubectl ...', Database: 'SELECT ...' }[app.cloud] || '' });
+  const root = el('div', {
+    class: 'cloud-helper',
+    style: 'flex:none;width:210px;overflow-y:auto;border-left:1px solid var(--border-soft);padding:8px;',
+  },
+    el('div', { style: 'display:flex;align-items:center;gap:6px;padding:0 0 6px' },
+      el('div', { class: 'sb-group-head', style: 'cursor:default;padding:0;flex:1', text: `${app.cloud} — ${app.name}` }),
+      el('button', {
+        class: 'icon-btn sm', text: '×', title: 'Close this helper',
+        onClick: () => root.remove(),
+      })),
+    ...commands.map((c) => el('button', {
+      class: 'ghost-btn sm', text: c.label, title: withContext(c.command),
+      style: 'display:block;width:100%;text-align:left;margin-bottom:4px',
+      onClick: () => run(c.command),
+    })),
+    el('div', { style: 'margin:10px 0;border-top:1px solid var(--border-soft)' }),
+    el('div', { class: 'hint', style: 'margin-bottom:4px', text: 'Run your own, then save it as a macro' }),
+    el('div', { style: 'display:flex;gap:4px' },
+      customInput,
+      el('button', { class: 'ghost-btn sm', text: 'Run', onClick: () => customInput.value.trim() && run(customInput.value) }),
+    ),
+    el('button', {
+      class: 'ghost-btn sm', text: 'Save as macro…', style: 'margin-top:4px;width:100%',
+      onClick: async () => {
+        const { editMacro } = await import('./macros.js');
+        await editMacro({ category: app.cloud, command: customInput.value.trim() });
+      },
+    }),
+  );
+  pane.cloudHelperRoot = root;
+  pane.body.append(root);
+}
+
+async function openCloudCliShell(app, profile) {
+  try {
+    const got = await resolveCloudLogin(app, profile);
+    if (!got) return;
+    const title = `${app.cloud} CLI — ${app.name}`;
+    // Blank: a quick credentialed shell has no use for the rest of whatever
+    // this machine's own rc files do — aliases, a custom prompt, or (as hit
+    // live) a broken dotfile tripping a perl locale warning and an
+    // unrelated brew auto-update on every single new shell.
+    const pane = state.activePane
+      ? await splitActivePane('right', { local: true, env: got.env, title, blank: true })
+      : await openLocalShell(null, { env: got.env, title, blank: true });
+    pane?.view?.writeln?.(`\x1b[90m[${got.identityLine}]\x1b[0m`);
+    attachCloudHelper(pane, app);
+    status(`Opened ${got.identityLine}`, 6000);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+/**
+ * The Terraform/Pulumi/aws-cli-in-a-different-terminal case: the credentials
+ * without a ServerLife pane at all, as `export KEY="value"` lines on the
+ * clipboard — paste into whatever terminal, IDE or tool actually needs them.
+ */
+async function copyCloudEnv(app, profile) {
+  try {
+    const got = await resolveCloudLogin(app, profile);
+    if (!got) return;
+    const text = Object.entries(got.env).map(([k, v]) => `export ${k}="${String(v).replace(/(["\\$`])/g, '\\$1')}"`).join('\n');
+    await window.api.clipboard.write(text);
+    status(`Copied ${got.identityLine} — paste into any terminal`, 6000);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+/**
+ * The "I'm already sitting in my Terraform directory" case: types the same
+ * `export` lines into whatever pane is already focused, rather than opening
+ * a new one — `sendToPane` is the same mechanism a macro or a snippet uses.
+ */
+async function sendCloudEnvToPane(app, profile) {
+  if (!state.activePane) return toast('Click a pane first — there is nothing focused to send this to.', 'error');
+  try {
+    const got = await resolveCloudLogin(app, profile);
+    if (!got) return;
+    const text = Object.entries(got.env).map(([k, v]) => `export ${k}="${String(v).replace(/(["\\$`])/g, '\\$1')}"`).join('\n');
+    sendToPane(state.activePane, text + '\n');
+    status(`Sent ${got.identityLine} to the focused pane`, 6000);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+/** Log in / Launch in Web UI / Open in Net Tools / Open CLI shell, per app kind. */
+function appMenuItems(app, profile) {
+  if (app.transport === 'cloud') {
+    return [
+      {
+        label: `Open ${app.cloud} CLI shell`,
+        title: app.cloud === 'AWS' ? 'Asks which IAM role first, if this app offers more than one'
+          : app.cloud === 'GCP' ? 'Asks which service account first, if this app offers more than one'
+          : undefined,
+        onClick: () => openCloudCliShell(app, profile),
+      },
+      {
+        label: `Copy ${app.cloud} environment variables`,
+        title: 'For Terraform, or any tool/terminal that isn’t a ServerLife pane — paste as shell exports',
+        onClick: () => copyCloudEnv(app, profile),
+      },
+      {
+        label: `Send ${app.cloud} environment to this pane`,
+        title: 'Types the same export lines into whatever pane is already focused',
+        onClick: () => sendCloudEnvToPane(app, profile),
+      },
+      {
+        label: `Open ${app.cloud} Console`,
+        onClick: () => window.api.apps.launch(app, { proxy: profile.proxy }).catch((e) => toast(e.message, 'error')),
+      },
+    ];
+  }
+  if (app.transport === 'tcp') {
+    return [
+      {
+        label: 'Open in Net Tools (port check)',
+        onClick: () => import('./nettools.js').then((m) => m.openNetTools({ host: app.publicAddr, tool: 'ports' })),
+      },
+      {
+        label: 'Open in Net Tools (telnet)',
+        onClick: () => import('./nettools.js').then((m) => m.openNetTools({ host: app.publicAddr, tool: 'telnet' })),
+      },
+    ];
+  }
+  if (app.transport === 'mcp') {
+    // Teleport's own relayed MCP protocol, not a web app: no browser launch,
+    // no plain curl. Login is the one action every app kind shares — using
+    // the server itself needs an MCP client (Claude, an agent) pointed at
+    // it, which is not something this row can do on its own yet.
+    return [
+      {
+        label: 'Log in',
+        title: 'tsh apps login — needed before an MCP client can use this server',
+        onClick: () => window.api.apps.login(app.name, { proxy: profile.proxy })
+          .then(() => { status(`Logged in to ${app.name}`); refreshAppsLoginStatuses(profile, [app.name], { force: true }); openAppsPaneFor(profile, app.name); })
+          .catch((e) => toast(e.message, 'error')),
+      },
+    ];
+  }
+  return [
+    {
+      label: 'Log in',
+      title: 'tsh apps login — needed for CLI/API use',
+      onClick: () => window.api.apps.login(app.name, { proxy: profile.proxy })
+        .then(() => { status(`Logged in to ${app.name}`); refreshAppsLoginStatuses(profile, [app.name], { force: true }); openAppsPaneFor(profile, app.name); })
+        .catch((e) => toast(e.message, 'error')),
+    },
+    {
+      label: 'Launch in Web UI',
+      onClick: () => window.api.apps.launch(app, { proxy: profile.proxy }).catch((e) => toast(e.message, 'error')),
+    },
+    {
+      label: 'Open in Net Tools',
+      onClick: () => import('./nettools.js').then((m) => m.openNetTools({ host: app.publicAddr, tool: 'curl' })),
+    },
+  ];
+}
+
+/** The kind badge beside an app's name — cloud apps already name their own cloud. */
+// The same brand colours kubeprovider.js's PROVIDERS already uses for
+// EKS/GKE/AKS badges — one set of cloud colours for the whole app, not a
+// second palette invented here.
+const CLOUD_COLOR = { AWS: '#ff9900', GCP: '#4285f4', Azure: '#0078d4', K8s: '#326ce5', Database: '#336791' };
+
+function appKindTag(app) {
+  if (app.cloud) {
+    return el('span', { class: 'kprov', style: `--kprov:${CLOUD_COLOR[app.cloud] || 'var(--accent)'}`, text: app.cloud });
+  }
+  if (app.transport === 'mcp') return el('span', { class: 'tag', title: 'Teleport’s relayed MCP protocol, not a web app', text: 'MCP' });
+  if (app.transport === 'tcp') return el('span', { class: 'tag', title: 'A TCP app — reached through VNet, not a browser', text: 'TCP' });
+  return null;
+}
+
+export function appRow(app, profile, opts = {}) {
+  const tags = labelEntries(app);
+  const expanded = showTags() && tags.length > 0;
+
+  const line = el('div', { class: 'sb-line' },
+    el('span', { class: 'gico', text: TRANSPORT_ICON[app.transport] || '□' }),
+    el('span', { class: 'sb-item-label', text: app.name }),
+    appKindTag(app));
+
+  const row = el('div', { class: 'sb-item apps-row' + (expanded ? ' has-tags' : '') + (opts.focused ? ' focused' : '') }, line);
+
+  // Whether `tsh apps login` has actually been run for this one — read off
+  // its certificate (see appsproxy.js's loginStatuses), not asked fresh per
+  // row: the cache is filled in bulk once per render by whoever drew this
+  // row's list (appsGroup/appspane.js), so this is a synchronous read.
+  if (app.transport !== 'tcp') {
+    const s = loginStatusFor(app, profile);
+    if (s) {
+      line.append(el('span', {
+        class: 'tag ' + (s.loggedIn ? 'live' : 'expired'),
+        title: s.loggedIn
+          ? `tsh apps login has a valid certificate for this app${s.validUntil ? ` until ${new Date(s.validUntil).toLocaleString()}` : ''}`
+          : 'No valid tsh apps login certificate for this app yet',
+        text: s.loggedIn ? 'logged in' : 'not logged in',
+      }));
+    }
+  }
+
+  // Whether this app would actually reach by name right now — for a TCP app
+  // that is VNet's tunnel; for an HTTP/cloud app it is the same VNet tunnel
+  // making "Launch in Web UI" open pre-authenticated off the CLI's own
+  // login instead of needing a separate browser session (confirmed live:
+  // with VNet running, the app's public address 302s straight into an
+  // authenticated launch — no browser login prompt).
+  if (app.publicAddr && app.transport !== 'mcp') {
+    const reachTag = el('span', { class: 'tag hint apps-reach' });
+    line.append(reachTag);
+    window.api.apps.tcpReachability(app, { proxy: profile.proxy }).then((r) => {
+      if (app.transport === 'tcp') {
+        reachTag.textContent = r.reachable ? 'reachable by name' : 'VNet off';
+        reachTag.title = r.reachable
+          ? `${app.publicAddr} resolves while VNet is running for this cluster`
+          : (r.reason || 'Start VNet for this cluster to reach this app by name');
+      } else {
+        reachTag.textContent = r.reachable ? 'launch: auto-authenticated' : 'launch: needs browser login';
+        reachTag.title = r.reachable
+          ? 'VNet is running for this cluster — Launch in Web UI opens straight in, using this login, no separate browser sign-in'
+          : (r.reason || 'Start VNet for this cluster so Launch in Web UI skips the separate browser sign-in');
+      }
+      reachTag.classList.toggle('vnet-on', r.reachable);
+    }).catch(() => { reachTag.remove(); });
+  }
+
+  // A cloud app's two most-reached-for actions sit right on the row —
+  // getting credentials out (for Terraform, or any tool that isn't a
+  // ServerLife pane) was buried a right-click deep; one click is the bar
+  // the AWS/Azure "command line or programmatic access" pages set for this.
+  if (app.transport === 'cloud') {
+    // Named per cloud, not generic "Shell"/"Copy env" — the badge beside the
+    // name already says which cloud, but a row's own buttons repeating it
+    // means never having to look sideways to tell AWS/Azure/GCP apart when
+    // several sit in the same list.
+    line.append(
+      el('button', {
+        class: 'ghost-btn sm', text: `${app.cloud} shell`, title: `Open ${app.cloud} CLI shell`,
+        onClick: (e) => { e.stopPropagation(); openCloudCliShell(app, profile); },
+      }),
+      el('button', {
+        class: 'ghost-btn sm', text: `Copy ${app.cloud} env`, title: `Copy ${app.cloud}'s env as shell exports — for Terraform, or any other terminal`,
+        onClick: (e) => { e.stopPropagation(); copyCloudEnv(app, profile); },
+      }),
+      el('button', {
+        class: 'ghost-btn sm', text: 'Discover K8s/DBs',
+        title: `EKS/GKE/AKS clusters and databases in this ${app.cloud} account that Teleport hasn't registered yet`,
+        onClick: (e) => { e.stopPropagation(); openCloudDiscoveryPanel(app, profile); },
+      }),
+    );
+  }
+
+  if (expanded) row.append(appTagStrip(app, tags));
+  else if (tags.length) line.append(el('span', { class: 'tag', title: `${tags[0][0]} = ${tags[0][1]}`, text: `${tags[0][0]}=${tags[0][1]}` }));
+
+  row.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    contextMenu(e.clientX, e.clientY, appMenuItems(app, profile));
+  });
+  row.addEventListener('dblclick', () => {
+    const items = appMenuItems(app, profile);
+    if (items[0]) items[0].onClick();
+  });
+  return row;
+}
+
+/** Start/Stop VNet, promoted here rather than left only in the cluster's context menu — see vnetMenuItems. */
+function vnetToggleButton(profile) {
+  const v = vnetFor(profile);
+  const live = v && VNET_LIVE.has(v.state);
+  const btn = el('button', {
+    class: 'ghost-btn sm',
+    text: live ? (v.state === 'stopping' ? 'Stopping VNet…' : 'Stop VNet') : 'Start VNet',
+    title: live
+      ? 'Stops tsh vnet and takes its network setup down with it'
+      : `Runs tsh vnet for ${profile.cluster || profile.proxy} alone, so its TCP apps answer by name`,
+  });
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (live) {
+      window.api.vnet.stop(profile.proxy).catch((err) => toast(err.message, 'error'));
+    } else {
+      window.api.vnet.start({ proxy: profile.proxy, home: profile.homeDir || null })
+        .then(() => status('Starting VNet… macOS may ask you to approve it', 8000))
+        .catch((err) => toast(err.message, 'error'));
+    }
+  });
+  return btn;
+}
+
+/**
+ * "Go to Grafana" for whatever resource is selected — a cluster today, node
+ * or pod are the obvious next step. Same deep-link spirit as KubeLife's
+ * "Open Cloud Console" (kubeprovider.js's consoleUrl()), but Grafana has no
+ * fixed URL scheme the way a cloud console does: which dashboards exist,
+ * their UIDs and template variable names are entirely local to each Grafana.
+ * Rather than guess a dashboard link that might silently point at nothing,
+ * this opens Grafana's own dashboard search pre-filled with the resource's
+ * name — confirm the `?query=` param still does that on the Grafana version
+ * in use before relying on it for a demo.
+ */
+export async function openGrafanaFor(term, profile) {
+  try {
+    const info = appsFor(profile);
+    const apps = info?.apps || await window.api.apps.list({ proxy: profile.proxy });
+    const grafanaApp = apps.find((a) => /grafana/i.test(a.name) || /grafana/i.test(a.description || ''));
+    if (!grafanaApp) { toast(`No Grafana app visible on ${profile.cluster || profile.proxy}.`, 'error'); return; }
+    await window.api.apps.launch(grafanaApp, { proxy: profile.proxy, path: `/dashboards?query=${encodeURIComponent(term)}` });
+    status(`Opened Grafana, searching for "${term}"`, 5000);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+/**
+ * What a cloud account holds that Teleport hasn't registered yet — EKS/
+ * GKE/AKS clusters and RDS/Cloud SQL instances, found by asking the cloud's
+ * own CLI through the already-resolved session rather than tsh. Anything
+ * Teleport already fronts shows up in KubeLife/the Databases list above on
+ * its own; this is for what is still outside that, with a one-click way to
+ * bring a cluster into KubeLife by writing it its own kubeconfig file (see
+ * settings.kubeconfigPaths — the same mechanism the "Add a kubeconfig
+ * file…" picker in kubepanel.js already uses).
+ */
+async function openCloudDiscoveryPanel(app, profile) {
+  let region = '';
+  let result = null;
+  let loading = false;
+  let error = null;
+  // The same role/service-account resolution every other cloud action goes
+  // through (see resolveCloudLogin) — an AWS app with more than one IAM
+  // role refuses a bare `tsh proxy aws` with "--aws-role is required"
+  // until this has run once; resolved lazily so opening the panel doesn't
+  // trigger a login before anyone has asked to discover anything.
+  let cloudLogin = null;
+
+  const ensureLogin = async () => {
+    if (cloudLogin) return cloudLogin;
+    cloudLogin = await resolveCloudLogin(app, profile);
+    return cloudLogin;
+  };
+
+  const runDiscovery = async (body) => {
+    loading = true; error = null; render(body);
+    try {
+      const login = await ensureLogin();
+      if (!login) { loading = false; render(body); return; } // identity picker was cancelled
+      result = await window.api.apps.discoverCloud(app.cloud, login.env, { region: region.trim() || undefined });
+    } catch (e) {
+      error = e.message; result = null;
+    }
+    loading = false; render(body);
+  };
+
+  const render = async (body) => {
+    clear(body);
+    const sections = [];
+
+    if (app.cloud === 'AWS') {
+      const regionInput = textInput({ value: region, placeholder: 'AWS region, e.g. us-east-1' });
+      regionInput.addEventListener('input', () => { region = regionInput.value; });
+      sections.push(el('div', { class: 'ap-bar', style: 'margin-bottom:8px' },
+        regionInput,
+        el('button', {
+          class: 'ghost-btn sm', text: loading ? 'Discovering…' : 'Discover',
+          disabled: loading || null,
+          onClick: () => {
+            if (!region.trim()) return toast('Pick an AWS region first', 'error');
+            return runDiscovery(body);
+          },
+        })));
+    } else if (!result && !loading && !error) {
+      // GCP/Azure list across the whole project/subscription — nothing to ask first.
+      runDiscovery(body);
+    }
+
+    if (loading && app.cloud !== 'AWS') sections.push(el('div', { class: 'sb-empty', text: 'Discovering…' }));
+    if (error) sections.push(el('div', { class: 'sb-empty', text: error }));
+
+    if (result) {
+      sections.push(el('div', { class: 'hint', style: 'margin:4px 0', text: 'Clusters' }));
+      if (result.clusterError) sections.push(el('div', { class: 'sb-empty', text: result.clusterError }));
+      else if (!result.clusters.length) sections.push(el('div', { class: 'sb-empty', text: 'None found.' }));
+      sections.push(...result.clusters.map((c) => el('div', { class: 'sb-item', style: 'cursor:default' },
+        el('span', { class: 'kprov', style: `--kprov:${CLOUD_COLOR[app.cloud]}`, text: app.cloud }),
+        el('span', { class: 'sb-item-label', text: c.name }),
+        el('span', { class: 'hint', style: 'margin-left:auto', text: c.region || c.location || c.resourceGroup || '' }),
+        el('button', {
+          class: 'ghost-btn sm', text: 'Add to KubeLife',
+          title: 'Writes this cluster its own kubeconfig file and adds it to Settings → kubeconfig paths',
+          onClick: async (e) => {
+            const btn = e.currentTarget;
+            btn.textContent = 'Adding…'; btn.disabled = true;
+            try {
+              const login = await ensureLogin();
+              await window.api.apps.addClusterToKubeconfig(app.cloud, login.env, c, app.name);
+              const { refreshKubeContexts } = await import('./kubepanel.js');
+              refreshKubeContexts();
+              status(`${c.name} added to KubeLife`, 5000);
+              btn.textContent = 'Added';
+            } catch (err) {
+              toast(err.message, 'error');
+              btn.textContent = 'Add to KubeLife'; btn.disabled = false;
+            }
+          },
+        }))));
+
+      sections.push(el('div', { class: 'hint', style: 'margin:10px 0 4px', text: 'Databases' }));
+      if (result.dbError) sections.push(el('div', { class: 'sb-empty', text: result.dbError }));
+      else if (app.cloud === 'Azure') sections.push(el('div', { class: 'sb-empty', text: 'Not available for Azure yet.' }));
+      else if (!result.databases.length) sections.push(el('div', { class: 'sb-empty', text: 'None found.' }));
+      sections.push(...result.databases.map((d) => el('div', { class: 'sb-item', style: 'cursor:default' },
+        el('span', { class: 'kprov', style: `--kprov:${CLOUD_COLOR.Database}`, text: d.engine || 'db' }),
+        el('span', { class: 'sb-item-label', text: d.name }),
+        el('span', { class: 'hint', style: 'margin-left:auto', text: d.endpoint || d.status || '' }),
+        d.endpoint ? el('button', {
+          class: 'ghost-btn sm', text: 'Copy endpoint',
+          onClick: () => { window.api.clipboard.write(d.endpoint); status(`Copied ${d.endpoint}`); },
+        }) : null)));
+    }
+
+    body.append(...sections);
+  };
+
+  await modal({
+    title: `Discover — ${app.name}`,
+    subtitle: `EKS/GKE/AKS clusters and databases in this ${app.cloud} account, not yet registered with Teleport`,
+    width: 'min(560px, 94vw)',
+    render,
+    buttons: [{ label: 'Close', value: null }],
+  });
+}
+
+/**
+ * "Cloud sessions" — a status panel for every cloud CLI proxy currently
+ * running, across every cluster, not scoped to the one it was opened from:
+ * what tools like Leapp or Granted show as a session list (which account/
+ * role, how long it's been up, a quick way back into it) rather than
+ * leaving a running credentialed shell invisible once its pane is buried.
+ * Each row only needs the app's name and cloud, both already in
+ * `allCloudSessions()` — a session already running resolves from its own
+ * cache with no cluster proxy needed, so this list works regardless of
+ * which cluster's menu it was opened from.
+ */
+/** A database Teleport knows about — `tsh db connect` only, no schema browser; see DATABASE_ACCESS_ROADMAP.md. */
+async function openDbConnect(db, profile, dbUser = '', dbNameParam = '') {
+  try {
+    const args = ['db', 'connect', db.name];
+    if (profile.proxy) args.push('--proxy=' + profile.proxy);
+    // Teleport has no way to know which database user actually exists on a
+    // self-hosted backend — its RBAC "allowed users" is a grant list, often
+    // wildcarded, not an account directory — so without this `tsh` either
+    // refuses outright or guesses wrong. The row's own input fields are the
+    // only place that answer can honestly come from.
+    if (dbUser) args.push('--db-user=' + dbUser);
+    if (dbNameParam) args.push('--db-name=' + dbNameParam);
+    const title = `DB — ${db.name}`;
+    const pane = state.activePane
+      ? await splitActivePane('right', { local: true, command: 'tsh', args, title, explorer: false })
+      : await openLocalShell(null, { command: 'tsh', args, title, explorer: false });
+    // Without this, paneTitle() (sessions.js) has no way to tell this pane
+    // apart from a plain local shell and renders "local: ~" instead —
+    // confirmed live, the same reasoning as kubepanel.js's pane.kubeExec.
+    pane.dbConnect = true;
+    refreshPaneTitles();
+    attachCloudHelper(pane, { cloud: 'Database', name: db.name });
+    status(dbUser ? `Connecting to ${db.name} as ${dbUser}…` : `Connecting to ${db.name}…`, 4000);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function openCloudSessionsPanel() {
+  const render = async (body) => {
+    clear(body);
+    const sections = [];
+
+    const sessions = await window.api.apps.cloudSessions();
+    sections.push(el('div', { class: 'hint', style: 'margin:4px 0', text: 'Active cloud CLI sessions' }));
+    if (!sessions.length) {
+      sections.push(el('div', { class: 'sb-empty', text: 'None running right now.' }));
+    }
+    const rows = sessions.map((s) => {
+      const elapsed = fmtDuration(Date.now() - s.startedAt);
+      const row = el('div', { class: 'sb-item', style: 'cursor:default' },
+        el('span', { class: 'kprov', style: `--kprov:${CLOUD_COLOR[s.cloud] || 'var(--accent)'}`, text: s.cloud }),
+        el('span', { class: 'sb-item-label', text: s.app }),
+        el('span', { class: 'tag hint', text: `running ${elapsed}` }));
+      // No fresh login here — the session is already up, so this reuses
+      // its cached env directly (`cloudCli` resolves from cache with no
+      // cluster proxy needed) rather than running the role-picker/login
+      // flow a second time against a session that already has one.
+      const app = { name: s.app, cloud: s.cloud };
+      const title = `${s.cloud} CLI — ${s.app}`;
+      const actions = el('div', { style: 'display:flex;gap:6px;margin-left:auto' },
+        el('button', {
+          class: 'ghost-btn sm', text: `${s.cloud} shell`,
+          onClick: async () => {
+            try {
+              const env = await window.api.apps.cloudCli(app, {});
+              const shellEnv = Object.fromEntries(Object.entries(env).filter(([k]) => k !== 'app' && k !== 'cloud'));
+              const pane = state.activePane
+                ? await splitActivePane('right', { local: true, env: shellEnv, title, blank: true })
+                : await openLocalShell(null, { env: shellEnv, title, blank: true });
+              attachCloudHelper(pane, app);
+            } catch (e) { toast(e.message, 'error'); }
+          },
+        }),
+        el('button', {
+          class: 'ghost-btn sm', text: `Copy ${s.cloud} env`,
+          onClick: async () => {
+            try {
+              const env = await window.api.apps.cloudCli(app, {});
+              const text = Object.entries(env).filter(([k]) => k !== 'app' && k !== 'cloud')
+                .map(([k, v]) => `export ${k}="${String(v).replace(/(["\\$`])/g, '\\$1')}"`).join('\n');
+              await window.api.clipboard.write(text);
+              status(`Copied ${title} — paste into any terminal`, 6000);
+            } catch (e) { toast(e.message, 'error'); }
+          },
+        }),
+        el('button', {
+          class: 'ghost-btn sm', text: 'Stop',
+          onClick: async () => { await window.api.apps.cloudSessionStop(s.app, s.cloud); render(body); },
+        }));
+      row.append(actions);
+      return row;
+    });
+    sections.push(...rows);
+
+    // Kubernetes — every Teleport-backed context, same list kubepanel.js's
+    // own sidebar reads from, not a separate fetch of its own.
+    sections.push(el('div', { class: 'hint', style: 'margin:10px 0 4px', text: 'Kubernetes clusters' }));
+    try {
+      const kr = await window.api.kube.contexts({ extraPaths: state.settings.kubeconfigPaths || [] });
+      const kubeCtxs = (kr?.contexts || []).filter((c) => c.teleportProxy);
+      if (!kubeCtxs.length) sections.push(el('div', { class: 'sb-empty', text: 'None visible right now.' }));
+      sections.push(...kubeCtxs.map((c) => el('div', { class: 'sb-item', style: 'cursor:default' },
+        el('span', { class: 'kprov', style: `--kprov:${CLOUD_COLOR.K8s}`, text: 'K8s' }),
+        el('span', { class: 'sb-item-label', text: c.kubeClusterName || c.name }),
+        el('span', { class: 'hint', style: 'margin-left:auto', text: c.teleportCluster || '' }),
+        el('button', {
+          class: 'ghost-btn sm', text: 'Shell',
+          onClick: async () => {
+            try {
+              const { openEcosystemShell } = await import('./kubepanel.js');
+              await openEcosystemShell(c, null);
+            } catch (e) { toast(e.message, 'error'); }
+          },
+        }))));
+    } catch (e) {
+      sections.push(el('div', { class: 'sb-empty', text: e.message }));
+    }
+
+    // Databases — `tsh db ls` per logged-in cluster. Connect only (no
+    // schema browser/query editor); see DATABASE_ACCESS_ROADMAP.md.
+    sections.push(el('div', { class: 'hint', style: 'margin:10px 0 4px', text: 'Databases' }));
+    try {
+      const profiles = (state.teleportProfiles || []).filter((p) => !p.expired);
+      const perProfile = await Promise.all(profiles.map((p) =>
+        window.api.db.list({ proxy: p.proxy }).then((dbs) => dbs.map((d) => ({ ...d, profile: p }))).catch(() => [])));
+      const dbs = perProfile.flat();
+      if (!dbs.length) sections.push(el('div', { class: 'sb-empty', text: 'None visible right now.' }));
+      sections.push(...dbs.map((d) => el('div', { class: 'sb-item', style: 'cursor:default' },
+        el('span', { class: 'kprov', style: `--kprov:${CLOUD_COLOR.Database}`, text: d.protocol || 'db' }),
+        el('span', { class: 'sb-item-label', text: d.name }),
+        el('span', { class: 'hint', style: 'margin-left:auto', text: d.profile.cluster || d.profile.proxy }),
+        el('button', { class: 'ghost-btn sm', text: 'Connect', onClick: () => openDbConnect(d, d.profile) }))));
+    } catch (e) {
+      sections.push(el('div', { class: 'sb-empty', text: e.message }));
+    }
+
+    body.append(...sections);
+  };
+  await modal({
+    title: 'Cloud sessions',
+    subtitle: 'Cloud CLI sessions, Kubernetes clusters and databases, across every cluster',
+    width: 'min(560px, 94vw)',
+    render,
+    buttons: [{ label: 'Close', value: null }],
+  });
+}
+
+/**
+ * All of a cluster's apps in a pane of their own, one focused — the
+ * one-stop alternative to working each app's row individually. Same
+ * precedent as `openHostsPaneFor`: a dynamic import so the pane's own
+ * (larger) module only loads once something actually opens it.
+ */
+export function openAppsPaneFor(profile, focusApp = null, dir = null) {
+  return import('./appspane.js')
+    .then((m) => m.openAppsPane({ proxy: profile.proxy, home: profile.homeDir || null, cluster: profile.cluster, focusApp, dir }))
+    .catch((e) => toast(e.message, 'error'));
+}
+
+function appsGroup(profile, key, info) {
+  if (info?.error) {
+    return group('Apps', 0, key, [el('div', { class: 'sb-empty', text: info.error })], null, profile);
+  }
+  const apps = info?.apps || [];
+  if (apps.length) refreshAppsLoginStatuses(profile, apps.filter((a) => a.transport !== 'tcp').map((a) => a.name));
+  const rows = apps.map((a) => appRow(a, profile));
+  const hasCloudApps = apps.some((a) => a.transport === 'cloud');
+  const extra = el('span', { class: 'apps-head-extra' },
+    vnetToggleButton(profile), vnetTag(profile),
+    apps.length ? el('button', {
+      class: 'ghost-btn sm', text: 'Apps pane',
+      title: 'Every app on this cluster in one pane — log in, launch, or start proxying any of them from there',
+      onClick: (e) => { e.stopPropagation(); openAppsPaneFor(profile); },
+    }) : null,
+    hasCloudApps ? el('button', {
+      class: 'ghost-btn sm', text: 'Cloud sessions',
+      title: 'Every AWS/Azure/GCP CLI proxy running right now, across every cluster',
+      onClick: (e) => { e.stopPropagation(); openCloudSessionsPanel(); },
+    }) : null);
+  return group('Apps', apps.length, key,
+    rows.length ? rows : [el('div', { class: 'sb-empty', text: info ? 'No apps visible.' : 'Loading apps…' })],
+    extra, profile);
+}
+
+/* ------------------------------------------------------------------ */
+/* Database Access — the "DB" segment.                                 */
+/*                                                                      */
+/* Same shape as Apps just above: its own group nested in the cluster's */
+/* own heading, only rendered while the DB toggle (kindShown.db) is on. */
+/* No automatic health check per row — that would spawn a real          */
+/* `tsh proxy db --tunnel` child process (dbproxy.js's ensure()) for     */
+/* every database on every render, which is a live network dial, not a  */
+/* cheap local check the way an app's VNet-reachability tag is. "Test"  */
+/* is a deliberate click instead.                                       */
+/* ------------------------------------------------------------------ */
+
+const dbCache = new Map();   // proxy -> { dbs, error }
+const dbLoading = new Set();
+
+function dbFor(profile) {
+  return dbCache.get(profile.proxy) || null;
+}
+
+function refreshDbFor(profile) {
+  if (!profile?.proxy || dbLoading.has(profile.proxy)) return;
+  dbLoading.add(profile.proxy);
+  window.api.db.list({ proxy: profile.proxy }).then((dbs) => {
+    dbCache.set(profile.proxy, { dbs, error: null });
+  }).catch((e) => {
+    dbCache.set(profile.proxy, { dbs: [], error: e.message });
+  }).finally(() => {
+    dbLoading.delete(profile.proxy);
+    if (activeKinds.has('db')) renderSidebar();
+  });
+}
+
+/**
+ * Translates a few common engine errors into what to actually fix, instead
+ * of a toast that just repeats a driver message someone has to already
+ * understand Postgres/MySQL to parse. The raw message is kept alongside
+ * it — this is a hint, not a replacement for what the database actually
+ * said.
+ */
+function friendlyDbError(message) {
+  const text = String(message || '');
+  if (/role .* does not exist|access denied for user|password authentication failed/i.test(text)) {
+    return `No such database user — check the "db user" field. (${text})`;
+  }
+  if (/database .* does not exist|unknown database/i.test(text)) {
+    return `No such database — check the "db name" field. (${text})`;
+  }
+  if (/connection refused|ECONNREFUSED|failed to connect to any|timeout/i.test(text)) {
+    return `Can't reach this database — its Teleport Database Service agent may be down. (${text})`;
+  }
+  return text;
+}
+
+/**
+ * Remembered per database, kept in settings the same way sidebarKinds and
+ * sidebarClosedGroups are — typing the right db user/name once is enough,
+ * this run or any later one. Neither is guessable from Teleport alone: its
+ * "allowed users" is an RBAC grant list, not an account directory, and a
+ * self-hosted database's actual database name is never reported to
+ * Teleport at all.
+ */
+function dbUserKey(d, profile) { return `${profile.proxy}\u0000${d.name}`; }
+function savedDbField(key, field) { return state.settings.dbUserChoices?.[key]?.[field] || ''; }
+function saveDbField(key, field, value) {
+  const stored = state.settings.dbUserChoices?.[key];
+  // An object is expected; an earlier build of this feature saved a plain
+  // string instead, and spreading a string splits it into {0:'s',1:'v',…} —
+  // confirmed live. Anything else unexpected gets the same treatment rather
+  // than trusting it.
+  const prior = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+  const dbUserChoices = { ...(state.settings.dbUserChoices || {}), [key]: { ...prior, [field]: value } };
+  state.settings = { ...state.settings, dbUserChoices };
+  window.api.settings.set({ dbUserChoices }).catch(() => {});
+}
+
+function dbRow(d, profile) {
+  const line = el('div', { class: 'sb-line' },
+    el('span', { class: 'gico', text: (d.protocol || 'db').slice(0, 2).toUpperCase() }),
+    el('span', { class: 'sb-item-label', text: d.name }),
+    el('span', { class: 'tag', text: d.protocol || 'db' }));
+  const row = el('div', { class: 'sb-item db-item-row' }, line);
+
+  // A real, polled answer to "is a tunnel open for this one right now" —
+  // see tunnelFor()'s own doc comment for why this was otherwise invisible.
+  const tunnel = tunnelFor(d, profile);
+  if (tunnel) {
+    const since = Math.round((Date.now() - tunnel.startedAt) / 1000);
+    const elapsed = since < 60 ? `${since}s` : `${Math.round(since / 60)}m`;
+    line.append(el('span', {
+      class: 'tag live', style: 'cursor:pointer',
+      title: tunnel.kind === 'proxy'
+        ? `A Teleport tunnel has been open for ${elapsed}, from Test or Connect — port ${tunnel.port}. Click to close it.`
+        : `An exported DBeaver launcher has been running for ${elapsed} (pid ${tunnel.pid}). Click to stop it.`,
+      text: `⚡ tunnel open (${elapsed})`,
+      onClick: async (e) => {
+        e.stopPropagation();
+        if (tunnel.kind === 'proxy') {
+          await window.api.db.stop(
+            { name: d.name, proxy: profile.proxy },
+            { dbUser: tunnel.dbUser, dbNameParam: tunnel.dbNameParam },
+          );
+        } else {
+          await window.api.db.exportStop(d.name);
+        }
+        refreshTunnelStatus();
+      },
+    }));
+  }
+
+  const key = dbUserKey(d, profile);
+  const fieldStyle = 'font-size:11px;padding:2px 6px;border-radius:var(--radius);'
+    + 'border:1px solid var(--border);background:var(--panel-2);color:var(--text)';
+  // Teleport's own "allowed users" for this resource, offered as pick-list
+  // suggestions (a <datalist>, still freely typeable) rather than a closed
+  // dropdown — it is a grant list, not an account directory, so the real
+  // answer is sometimes not on it at all.
+  const suggestions = (d.allowedUsers || []).filter((u) => u !== '*');
+  const datalistId = `dbu-${key.replace(/[^\w]/g, '_')}`;
+  const userInput = el('input', {
+    type: 'text', placeholder: 'db user (required)', list: suggestions.length ? datalistId : undefined,
+    // Deliberately starts blank, not guessed — that grant list, often just
+    // "*", is not an account directory, so a guess here would look like a
+    // real answer and usually be wrong. Confirmed live: it was "ab" for
+    // most of a real demo cluster's databases, none of which have a role
+    // by that name.
+    title: 'Which database user to test/connect as — type the real one; Teleport can\'t know it for a self-hosted database',
+    style: `width:96px;${fieldStyle}`,
+  });
+  userInput.value = savedDbField(key, 'user');
+  const nameInput = el('input', {
+    type: 'text', placeholder: 'db name (optional)',
+    title: 'Which database/schema to test against — also never reported to Teleport for a self-hosted database',
+    style: `width:112px;${fieldStyle}`,
+  });
+  nameInput.value = savedDbField(key, 'name');
+  for (const input of [userInput, nameInput]) {
+    input.addEventListener('click', (e) => e.stopPropagation());
+    // `change` (blur/Enter), not `input` — a settings write per keystroke
+    // would be one disk write per character typed.
+  }
+  userInput.addEventListener('change', () => saveDbField(key, 'user', userInput.value.trim()));
+  nameInput.addEventListener('change', () => saveDbField(key, 'name', nameInput.value.trim()));
+
+  line.append(el('div', { style: 'display:flex;gap:6px;margin-left:auto;align-items:center' },
+    userInput,
+    nameInput,
+    suggestions.length ? el('datalist', { id: datalistId }, ...suggestions.map((u) => el('option', { value: u }))) : null,
+    el('button', {
+      class: 'ghost-btn sm', text: 'Test',
+      title: 'Open a Teleport-authenticated tunnel and confirm which database user it answers as',
+      onClick: async (e) => {
+        e.stopPropagation();
+        const dbUser = userInput.value.trim();
+        const dbNameParam = nameInput.value.trim();
+        if (!dbUser) return toast('Enter a database user first', 'error');
+        status(`Testing ${d.name} as ${dbUser}…`);
+        try {
+          const r = await window.api.db.test({ name: d.name, protocol: d.protocol, proxy: profile.proxy }, { dbUser, dbNameParam });
+          if (r.ok) toast(`${d.name}: healthy, connected as ${r.currentUser}`, 'success');
+          else toast(`${d.name}: ${friendlyDbError(r.error)}`, 'error');
+          // Test leaves the tunnel open on purpose (dbproxy.js reuses it) —
+          // worth showing immediately rather than waiting for the next poll.
+          ensureTunnelPolling();
+        } catch (err) { toast(`${d.name}: ${friendlyDbError(err.message)}`, 'error'); }
+      },
+    }),
+    el('button', {
+      class: 'ghost-btn sm', text: 'Connect',
+      title: 'tsh db connect — a terminal session for this database',
+      onClick: async (e) => {
+        e.stopPropagation();
+        const dbUser = userInput.value.trim();
+        const dbNameParam = nameInput.value.trim();
+        // What is actually about to happen, said once before it does —
+        // the same "which user, which database" question Test answers
+        // with a toast, asked before the fact instead of after.
+        const ok = await confirm({
+          title: `Connect to ${d.name}`,
+          message: dbUser
+            ? `As database user "${dbUser}"${dbNameParam ? `, database "${dbNameParam}"` : ''}, on ${profile.cluster || profile.proxy}.`
+            : 'No database user set — tsh will have to ask or guess one in the terminal itself.',
+          confirmLabel: 'Connect',
+        });
+        if (!ok) return;
+        openDbConnect(d, profile, dbUser, dbNameParam);
+      },
+    }),
+    el('button', {
+      class: 'ghost-btn sm', text: 'Export to…',
+      title: 'Write a one-click connection file for an external database GUI (DBeaver, …)',
+      onClick: (e) => { e.stopPropagation(); openDbExportMenu(e, d, profile, userInput.value.trim(), nameInput.value.trim()); },
+    })));
+  return row;
+}
+
+function dbGroup(profile, key, info) {
+  if (info?.error) {
+    return group('Databases', 0, key, [el('div', { class: 'sb-empty', text: info.error })], null, profile);
+  }
+  const dbs = info?.dbs || [];
+  const rows = dbs.map((d) => dbRow(d, profile));
+  return group('Databases', dbs.length, key,
+    rows.length ? rows : [el('div', { class: 'sb-empty', text: info ? 'No databases visible.' : 'Loading databases…' })],
+    null, profile);
+}
+
+/**
+ * "Export to…" — a one-click connection file for an external database GUI.
+ * Only DBeaver exists so far (db:exportTo → dbexport.js): its `-con` flag
+ * is ephemeral by default, confirmed against DBeaver's own docs, so the
+ * generated file never touches DBeaver's saved connection list. pgAdmin
+ * and DataGrip are the next two, not yet built.
+ */
+function openDbExportMenu(e, d, profile, dbUser, dbNameParam) {
+  if (!dbUser) return toast('Enter a database user first — the exported file needs one too', 'error');
+  contextMenu(e.clientX, e.clientY, [
+    { heading: true, label: 'Export connection to…' },
+    {
+      label: 'DBeaver — open now',
+      title: 'Writes the launcher and runs it immediately: starts the Teleport tunnel, opens DBeaver already connected',
+      onClick: () => exportDbConnection(d, profile, dbUser, dbNameParam, 'dbeaver', { run: true }),
+    },
+    {
+      label: 'DBeaver — save file for later',
+      title: 'Writes the launcher to Downloads without running it — double-click it whenever, on this machine',
+      onClick: () => exportDbConnection(d, profile, dbUser, dbNameParam, 'dbeaver', { run: false }),
+    },
+  ]);
+}
+
+/**
+ * Verified directly against a real database: the launcher this writes
+ * actually works unattended — the backend's own pg_stat_activity showed
+ * DBeaver connected as the right user and running its own navigator query,
+ * with nothing more than this one click.
+ */
+async function exportDbConnection(d, profile, dbUser, dbNameParam, target, { run = false } = {}) {
+  status(`Writing a ${target} launcher for ${d.name}…`);
+  try {
+    const r = await window.api.db.exportTo(
+      { name: d.name, protocol: d.protocol, proxy: profile.proxy },
+      { dbUser, dbNameParam },
+      target,
+    );
+    if (!r.ok) return toast(r.error, 'error');
+    if (run) {
+      const started = await window.api.db.runLauncher(r.path, d.name);
+      if (!started.ok) return toast(started.error, 'error');
+      toast(`Opening ${target} for ${d.name}…`, 'success');
+      refreshTunnelStatus();
+    } else {
+      window.api.local.reveal(r.path);
+      toast('Launcher saved — double-click it in Finder to connect', 'success');
+    }
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 /**

@@ -8,7 +8,7 @@
  * `--kube-context`, not kubectl's `--context=`).
  */
 
-const { execFile } = require('child_process');
+const { execFile, exec } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -257,8 +257,19 @@ async function searchCharts(spec = {}, { name, versionsOf, refresh = false } = {
  * same way install takes them. `version` pins the chart version (empty:
  * the newest the repo has). `preview` returns the commands instead of
  * running them, for the wizard to show and copy.
+ *
+ * `forceConflicts`/`serverSide`: confirmed against a real `helm upgrade
+ * --help` (v4.3.2) rather than assumed — `--force-conflicts` only does
+ * anything once server-side apply is actually in play, which `--server-side`
+ * (default "auto", deferring to the previous release's own method) decides.
+ * `serverSide` left '' omits the flag entirely (Helm's own default), so
+ * asking for force-conflicts without saying server-side explicitly still
+ * does what it says rather than silently depending on "auto" guessing right.
  */
-async function upgrade(spec = {}, { release, namespace, chartRef, version, valuesYaml, dryRun = false, preview = false, resetValues = true } = {}) {
+async function upgrade(spec = {}, {
+  release, namespace, chartRef, version, valuesYaml, dryRun = false, preview = false, resetValues = true,
+  forceConflicts = false, serverSide = '',
+} = {}) {
   const { env, contextArgs } = kube.helmArgsFor(spec);
   const args = [...contextArgs, 'upgrade', release, chartRef, '-n', namespace];
   if (version) args.push('--version', version);
@@ -267,11 +278,31 @@ async function upgrade(spec = {}, { release, namespace, chartRef, version, value
   // out is meant to be gone, not quietly kept by --reuse-values.
   if (resetValues) args.push('--reset-values');
   if (dryRun) args.push('--dry-run');
+  if (serverSide === 'true' || serverSide === 'false') args.push('--server-side=' + serverSide);
+  if (forceConflicts) args.push('--force-conflicts');
   const hasValues = valuesYaml && valuesYaml.trim() && valuesYaml.trim() !== 'null';
   if (hasValues) args.push('-f', '-');
   if (preview) return { ok: true, command: kube.commandPreview([{ args, stdin: hasValues ? valuesYaml : null }], env) };
   const r = hasValues ? await runWithStdin(args, valuesYaml, { env, timeout: 120000 }) : await run(args, { env, timeout: 120000 });
   return r.ok ? { ok: true, output: plain(r.stdout) } : { ok: false, error: plain(r.stderr) || 'helm upgrade failed' };
+}
+
+/**
+ * The upgrade wizard's own "What will run" box, run exactly as written once
+ * someone has edited it — the preview is real shell text (quoted argv, a
+ * heredoc for values), not a structured payload, so running it means a real
+ * shell: `sh -c` is what makes the heredoc syntax in that text mean anything
+ * at all. Self-contained by construction (`commandPreview` already writes
+ * `KUBECONFIG=...` and `--kube-context=...` into the text itself), so this
+ * needs nothing from `spec` — same as pasting it into a terminal by hand.
+ */
+function runRaw(text) {
+  return new Promise((resolve) => {
+    exec(text, { shell: '/bin/sh', timeout: 120000, maxBuffer: 16 * 1024 * 1024, env: process.env },
+      (err, stdout, stderr) => resolve(err
+        ? { ok: false, error: plain(String(stderr || '')).trim() || err.message }
+        : { ok: true, output: plain(String(stdout || '')) }));
+  });
 }
 
 /** `helm show readme <chartRef>` — a repo ref or a local path, same as every other `chartRef` here. */
@@ -356,5 +387,5 @@ async function renderTemplate(spec = {}, { name, chartRef, valuesYaml } = {}) {
 
 module.exports = {
   listReleases, history, getValues, getManifest, rollback, uninstall, uninstallFlags, deletedResources, addRepo, install, upgrade, searchCharts, splitChart,
-  showReadme, getValuesSchema, fieldsFromSchema, test, renderTemplate,
+  showReadme, getValuesSchema, fieldsFromSchema, test, renderTemplate, runRaw,
 };

@@ -409,6 +409,18 @@ input, textarea, select { font-family: inherit; font-size: inherit; color: inher
 .sb-group.collapsed .sb-items { display: none; }
 .sb-group-head .count { margin-left: auto; font-weight: 400; opacity: .65; }
 /*
+ * A group nested inside another group's items — so far: the Apps group
+ * inside its own cluster — reads as a sub-section of that cluster rather
+ * than a second heading beside it: indented, and its own heading toned
+ * down. It keeps the exact same collapse/expand (the chevron, the click, the
+ * count) a top-level group has — that still belongs to it alone, clearing
+ * only part of the cluster, not the whole thing.
+ */
+.sb-items > .sb-group { margin-left: 14px; margin-bottom: 1px; }
+.sb-items > .sb-group > .sb-group-head { padding: 3px 8px; font-size: 9.5px; font-weight: 500; opacity: .8; }
+.sb-items > .sb-group > .sb-group-head:hover { opacity: 1; }
+.sb-items > .sb-group > .sb-group-head .count { opacity: .55; }
+/*
  * A cluster's own mark. The colour takes the heading's text and a bar down
  * the group's left edge — the same bar a coloured host row wears, so a red
  * cluster and a red host inside it read as the same statement rather than
@@ -634,6 +646,13 @@ input, textarea, select { font-family: inherit; font-size: inherit; color: inher
 /* A host row showing its full tag strip stacks instead of sitting on one line. */
 .sb-item.has-tags { flex-direction: column; align-items: stretch; gap: 3px; padding-bottom: 6px; }
 .sb-item.has-tags .sb-line { display: flex; align-items: center; gap: 7px; }
+/*
+ * An app row always wraps its icon/name/badges in .sb-line (so the tag strip
+ * below can sit beside it rather than inside it, same shape a host row
+ * uses) — but unlike a host row, it needs the flex gap whether or not tags
+ * are showing, or the icon and name touch with has-tags off.
+ */
+.apps-row .sb-line { display: flex; align-items: center; gap: 7px; }
 .sb-tags { display: flex; flex-wrap: wrap; gap: 3px; padding-left: 26px; }
 
 .chip {
@@ -3352,6 +3371,46 @@ input, textarea, select { font-family: inherit; font-size: inherit; color: inher
 .pane.hosts-pane .pname { color: var(--text); }
 
 .hp-root { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; overflow: hidden; }
+
+/*
+ * The one-stop apps pane — same "ordinary pane with its terminal and
+ * explorer hidden" trick as .hosts-pane above, kept as its own class for
+ * the same reason the kube browser's is.
+ */
+.pane.apps-pane .pane-term,
+.pane.apps-pane .pane-files,
+.pane.apps-pane .pane-split-h { display: none !important; }
+.pane.apps-pane .pmacro,
+.pane.apps-pane .pnet,
+.pane.apps-pane .phl,
+.pane.apps-pane .pfiles,
+.pane.apps-pane .pane-search,
+.pane.apps-pane .pmacro-pins { display: none !important; }
+.pane.apps-pane .pname { color: var(--text); }
+
+.ap-root { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; overflow: hidden; padding: 10px; gap: 8px; }
+.ap-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: none; }
+.ap-bar .ap-cluster, .ap-bar select { max-width: 220px; }
+.ap-bar input[type="text"] { margin-left: auto; min-width: 180px; }
+.ap-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.ap-seg .ghost-btn { border-radius: 0; }
+.ap-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
+
+.ap-list { display: flex; flex-direction: column; gap: 2px; }
+.ap-list .apps-row.focused,
+.ap-cards .apps-row.focused { background: var(--accent-dim); border-radius: 6px; }
+.ap-list .apps-row.focused .sb-item-label,
+.ap-cards .apps-row.focused .sb-item-label { font-weight: 600; }
+
+.ap-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; align-content: start; }
+.ap-cards .apps-row {
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.ap-cards .apps-row .sb-line { flex-wrap: wrap; }
+
+.ap-grafana { display: inline-flex; align-items: center; gap: 4px; }
+.ap-grafana input[type="text"] { font-size: 11px; padding: 2px 6px; width: 140px; margin-left: 0; }
 
 /*
  * KubeLife's full-cluster browser as a pane instead of a modal — the same

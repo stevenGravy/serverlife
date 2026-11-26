@@ -209,6 +209,37 @@ export function makeHostsPane(pane, title) {
 }
 
 /**
+ * A one-stop pane for a cluster's apps — same trick as a hosts pane above:
+ * an ordinary pane with no session, its own root div for appspane.js to
+ * render into. A second, parallel pair of functions, same reasoning as
+ * `openHostsTab`/`makeHostsPane` already give for not teaching either one
+ * to take a different body.
+ */
+export async function openAppsTab(title) {
+  const tab = state.createTab({ title, kind: 'local', connId: null });
+  const pane = await createPane({ tabId: tab.id, kind: 'local', connId: null });
+  makeAppsPane(pane, title);
+  tab.root = paneNode(pane.id);
+  state.activeTabId = tab.id;
+  state.setActivePane(pane.id);
+  state.emit('tabs');
+  renderPanes();
+  return pane;
+}
+
+export function makeAppsPane(pane, title) {
+  pane.isApps = true;
+  pane.title = title || 'Apps';
+  pane.element.classList.add('apps-pane');
+  const name = pane.head?.querySelector('.pname');
+  if (name) name.textContent = pane.title;
+  setPaneExplorerVisible(pane, false);
+  pane.appsHost = el('div', { class: 'ap-root' });
+  pane.body.append(pane.appsHost);
+  return pane;
+}
+
+/**
  * KubeLife's full-cluster browser, as a tab instead of a modal — the exact
  * same trick as a hosts pane (above): an ordinary pane, emptied of its
  * session, with its own root div for kubebrowser.js to render into. A
@@ -2281,7 +2312,7 @@ export async function splitActivePane(dir, opts = {}) {
    * A split that names something else — another host, a local shell, a
    * hosts list — is still ServerLife's, since tmux cannot hold those.
    */
-  if (pane?.kind === 'tmux' && pane.tmuxId && !opts.host && !opts.local && !opts.hosts) {
+  if (pane?.kind === 'tmux' && pane.tmuxId && !opts.host && !opts.local && !opts.hosts && !opts.apps) {
     const { splitTmuxPane } = await import('./tmux.js');
     return splitTmuxPane(pane, dir);
   }
@@ -2328,6 +2359,11 @@ export async function splitActivePane(dir, opts = {}) {
     const { preferredLogin } = await import('./sidebar.js');
     return splitActivePane(dir, { ...opts, host: picked[0], login: opts.login || preferredLogin(picked[0]) });
   }
+  // Same reasoning again for the apps pane: a bare split off it is "more of
+  // the same", not a disconnected local shell.
+  if (!opts.host && !opts.local && !opts.hosts && !opts.apps && pane.isApps) {
+    return splitActivePane(dir, { ...opts, apps: true });
+  }
   const tab = state.getTab(pane.tabId);
   if (!tab) return;
 
@@ -2337,7 +2373,7 @@ export async function splitActivePane(dir, opts = {}) {
   // A hosts pane connects to nothing, so it must not inherit the pane it
   // came from — a split off a session would otherwise take that session's
   // connection with it and then never use it.
-  if (opts.hosts) {
+  if (opts.hosts || opts.apps) {
     kind = 'local';
     connId = null;
   } else if (opts.local) {
@@ -2392,6 +2428,12 @@ export async function splitActivePane(dir, opts = {}) {
    */
   if (opts.hosts) {
     makeHostsPane(newPane, 'Hosts');
+    renderPanes();
+    state.emit('tabs');
+    return newPane;
+  }
+  if (opts.apps) {
+    makeAppsPane(newPane, 'Apps');
     renderPanes();
     state.emit('tabs');
     return newPane;
@@ -2530,6 +2572,7 @@ export async function popPaneToWindow(paneId = state.activePaneId) {
   const pane = state.getPane(paneId);
   if (!pane) return false;
   if (pane.isHosts) { status('A hosts pane belongs to its window'); return false; }
+  if (pane.isApps) { status('An apps pane belongs to its window'); return false; }
   if (!pane.termId) { status('That pane has nothing running in it yet'); return false; }
 
   const conn = pane.connId ? state.getConnection(pane.connId) : null;
@@ -3245,6 +3288,8 @@ export function paneTitle(pane, { long = false } = {}) {
   // own, so without this it fell through to the generic local-shell case
   // below and read as plain "local".
   if (pane.isKubeBrowser) return pane.title || 'Kubernetes';
+  // Same reasoning again for the apps pane (see makeAppsPane).
+  if (pane.isApps) return pane.title || 'Apps';
   /*
    * A tmux pane is named by the window it is in, not by the pane id: `%7` is
    * how the protocol refers to it and means nothing to anyone reading a tab
@@ -3264,6 +3309,10 @@ export function paneTitle(pane, { long = false } = {}) {
   if (pane.kubeExec) return pane.title || 'kube exec';
   // Same reasoning, for a `kubectl logs -f` pane (see kubepanel.js's openPodLogs).
   if (pane.kubeLogs) return pane.title || 'kube logs';
+  // Same reasoning again for a `tsh db connect` pane (see sidebar.js's
+  // openDbConnect) — a 'local' pane underneath, read as the database it is
+  // connected to rather than as the directory the process started from.
+  if (pane.dbConnect) return pane.title || 'database';
   const dir = shortCwd(pane.cwd, pane.kind === 'local' ? {} : { home: pane.remoteHome });
 
   if (pane.kind === 'local') {
@@ -3614,7 +3663,7 @@ function onPaneContextMenu(e, paneId) {
     ] : []),
     // A local shell can become a tmux session on this machine. Not on
     // Windows, which has no native tmux.
-    ...(pane.kind === 'local' && !pane.isHosts && !pane.isKubeBrowser && state.appInfo?.platform !== 'win32' ? [
+    ...(pane.kind === 'local' && !pane.isHosts && !pane.isKubeBrowser && !pane.isApps && state.appInfo?.platform !== 'win32' ? [
       {
         label: 'Open in tmux on this machine\u2026', icon: '\u267B',
         title: 'A tmux session here — what runs in it keeps running when this window closes',

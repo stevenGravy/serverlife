@@ -37,6 +37,8 @@ are looking at the thing you are asking about.
 - [KubeLife](#kubelife)
 - [Windows](#windows)
 - [S3](#s3)
+- [Application Access](#application-access)
+- [Database Access](#database-access)
 - [Network and certificate tools](#network-and-certificate-tools)
 - [The AI assistant](#the-ai-assistant)
 - [Search everything](#search-everything)
@@ -2808,6 +2810,82 @@ to whatever the bucket was registered with.
 
 Signature V4 is implemented directly rather than pulling in the AWS SDK, and is
 verified against AWS's published test vectors.
+
+## Application Access
+
+Teleport **Applications** — HTTP apps, TCP apps, and the Azure/GCP/AWS cloud
+CLI apps — listed and acted on, the same way SSH hosts and Kubernetes
+clusters already are.
+
+- **SSH / K8s / Apps / DB — four independent switches**, not a single
+  choice. Above the host list, each of **SSH**, **K8s**, **Apps** and
+  **DB** turns its own rows on or off; any combination can be on at once,
+  and turning one off never affects the others. **Apps** and **DB** default
+  off — each opens on demand rather than always taking up room in the
+  sidebar — while **SSH** and **K8s** default on. Remembered across
+  restarts.
+- **One "Apps" group per logged-in cluster**, listed the same place that
+  cluster's hosts and beams are, with every app Teleport shows for it.
+- **Per-app actions**, right-click or double-click a row for the first one:
+  - An **HTTP app** gets **Log in** (`tsh apps login`, for anything that
+    needs a CLI/API session afterwards), **Launch in Web UI** (opens the
+    system browser at the app's address), and **Open in Net Tools** (runs
+    it through the existing [Network and certificate tools](#network-and-certificate-tools)
+    `curl` tool).
+  - A **TCP app** gets **Open in Net Tools**, pre-set to a port check or a
+    Telnet session. Its row also shows whether it is reachable by name right
+    now: **reachable by name** while VNet (below) is running for that
+    cluster, **VNet off** (with the reason) when it is not.
+  - A **cloud app** (AWS, Azure or GCP) gets **Open \<cloud\> CLI shell** and
+    **Open Console**. The shell starts (or reuses) a local `tsh proxy
+    aws`/`azure`/`gcloud` tunnel and opens a terminal with its credentials
+    already in the environment — as a **split beside whatever pane is
+    already open**, the same as opening another host beside one, rather than
+    a new tab every time. Opens a fresh tab only when nothing is open yet to
+    split beside.
+- **VNet, promoted.** The Apps group's heading carries a **Start VNet**/**Stop
+  VNet** button for that cluster, not just the cluster menu's own item —
+  since a TCP app needs VNet running to answer by name, starting or stopping
+  it belongs right next to the apps that depend on it.
+- **Go to Grafana…**, on a cluster's own right-click menu (next to *Refresh
+  this cluster*): finds that cluster's Grafana app, logs in if needed, and
+  opens its dashboard search already filled in with the cluster's name.
+  Grafana itself is just an HTTP app like any other — this only saves typing
+  the search.
+
+## Database Access
+
+Teleport **Database Access** — Postgres, MySQL and the other engines
+Teleport proxies — listed and tested per cluster the same way SSH hosts,
+Kubernetes clusters and apps already are.
+
+- **DB, the fourth switch**, beside SSH, K8s and Apps above the host list.
+  Off by default, like Apps, so it never takes up room until asked for.
+- **One "Databases" group per logged-in cluster**, listing every database
+  Teleport shows for it, each with its protocol.
+- **A database user field on every row** — and, for engines that need
+  one, a **database name field** too. These are not guessable from
+  Teleport alone: a database's "allowed users" is a grant list (often
+  wildcarded, `*`) saying who is *permitted* to ask, not an account
+  directory saying who actually exists on the backend — and a database
+  name is never reported to Teleport at all. Type the real ones once; both
+  are remembered per cluster and database from then on, including across
+  restarts.
+- **Test** opens a real, short-lived `tsh proxy db --tunnel` and asks the
+  database who it is connected as (`select current_user`, or the engine's
+  equivalent) — a genuine connectivity and identity check, not just
+  confirmation that the resource exists. A wrong database user or name
+  fails here with the database's own error, same as it would from any
+  other client.
+- **Connect** opens a terminal running `tsh db connect`, titled with the
+  database's own name.
+- **Export to… → DBeaver**: *open now* writes a small launcher and runs it —
+  it starts its own `tsh proxy db --tunnel` and opens DBeaver already
+  connected — or *save file for later* puts it in Downloads to double-click
+  whenever, without ServerLife running. DBeaver's `-con` connection is
+  ephemeral, so its saved connection list is never touched. The user field
+  suggests the users Teleport allows for that database, and Connect says
+  which user, database and cluster before it opens.
 
 ## Macros
 

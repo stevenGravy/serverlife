@@ -53,11 +53,14 @@
         <!-- Only shown on the Resources tab, and only when Settings →
              KubeLife → "Enable Kubernetes support" is on: which kind of
              resource is listed, SSH hosts and Kubernetes clusters together
-             by default. See sidebar.js initSidebar()/applyKubeEnabledSetting(). -->
+             by default. See sidebar.js initSidebar()/applyKubeEnabledSetting().
+             Independent on/off toggles, not a mutually-exclusive choice — any
+             combination can be on at once; see toggleHostKind()/hostKindShown(). -->
         <div id="sb-kind-filter" class="sb-subtabs hidden">
-          <button class="sb-kind-tab active" data-kind="all">All</button>
-          <button class="sb-kind-tab" data-kind="ssh">SSH</button>
-          <button class="sb-kind-tab" data-kind="kube">K8s</button>
+          <button class="sb-kind-tab active" data-kind="ssh">SSH</button>
+          <button class="sb-kind-tab active" data-kind="kube">K8s</button>
+          <button class="sb-kind-tab" data-kind="apps">Apps</button>
+          <button class="sb-kind-tab" data-kind="db">DB</button>
         </div>
         <div class="sb-search">
           <input id="host-filter" type="text" placeholder="Filter hosts or tags — env=prod" spellcheck="false"

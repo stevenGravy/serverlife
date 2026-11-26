@@ -77,6 +77,12 @@ const kubescan = require('./kubescan');
 const kubegraph = require('./kubegraph');
 const decoders = require('./decoders');
 const awsproxy = require('./awsproxy');
+const appsproxy = require('./appsproxy');
+const dbbin = require('./dbbin');
+const dbproxy = require('./dbproxy');
+const dbengines = require('./dbengines');
+const dbagent = require('./dbagent');
+const dbexport = require('./dbexport');
 const awscreds = require('./awscreds');
 const mxfile = require('./multiexecfile');
 const { DeviceSessions } = require('./devices');
@@ -1637,6 +1643,111 @@ function registerIpc() {
   handle('aws:login', async (app, role, opts) => awsproxy.login(app, role, opts || {}));
   handle('aws:logout', async (app, opts) => awsproxy.logout(app, opts || {}));
   handle('aws:proxies', async () => awsproxy.status());
+
+  /* --- Application Access: every Teleport app, not just AWS --- */
+  handle('apps:list', async (opts) => appsproxy.listApps(opts || {}));
+  handle('apps:login', async (app, opts) => appsproxy.login(app, opts || {}));
+  handle('apps:logout', async (app, opts) => appsproxy.logout(app, opts || {}));
+  handle('apps:launch', async (app, opts) => {
+    const base = /^https?:\/\//.test(app?.publicAddr || '') ? app.publicAddr : `https://${app.publicAddr}`;
+    const url = opts?.path ? base.replace(/\/$/, '') + opts.path : base;
+    await shell.openExternal(url);
+    return { ok: true, url };
+  });
+  handle('apps:awsRoles', async (appName, opts) => appsproxy.listAwsRoles(appName, opts || {}));
+  handle('apps:gcpAccounts', async (appName, opts) => appsproxy.listGcpServiceAccounts(appName, opts || {}));
+  handle('apps:cloudLogin', async (app, role, opts) => appsproxy.loginCloud(app.name, app.cloud, role, opts || {}));
+  handle('apps:cloudCli', async (app, opts) => appsproxy.ensureCloudCli(app.name, app.cloud, opts || {}));
+  handle('apps:verifyCloudCli', async (cloud, env) => appsproxy.verifyCloudCli(cloud, env));
+  handle('apps:cloudSessions', async () => appsproxy.allCloudSessions());
+  handle('apps:cloudSessionStop', async (appName, cloud) => ({ ok: appsproxy.stopCloudSession(appName, cloud) }));
+  handle('apps:cloudCliStop', async (appName) => ({ ok: appsproxy.stop(appName) }));
+  handle('apps:cloudCliStatus', async () => appsproxy.status());
+  /*
+   * What a cloud account holds beyond what Teleport has already registered
+   * — `tsh kube ls`/KubeLife already cover anything Teleport fronts; this
+   * is for EKS/GKE/AKS clusters and RDS/Cloud SQL instances Teleport
+   * doesn't know about yet. Takes the env already resolved by
+   * `resolveCloudLogin` (sidebar.js) rather than resolving it again here —
+   * an AWS app with more than one IAM role needs that role picked first,
+   * and re-resolving here would hit the exact same "--aws-role is
+   * required" refusal `apps:cloudLogin` exists to get past.
+   */
+  handle('apps:discoverCloud', async (cloud, env, opts) => appsproxy.discoverCloud(cloud, env, { region: opts?.region }));
+  handle('apps:addClusterToKubeconfig', async (cloud, env, cluster, appName) => {
+    const dir = path.join(app.getPath('userData'), 'cloud-kubeconfigs');
+    fs.mkdirSync(dir, { recursive: true });
+    const safe = `${appName}-${cluster.name}`.replace(/[^\w.-]+/g, '_');
+    const file = path.join(dir, `${safe}.yaml`);
+    await appsproxy.writeClusterKubeconfig(cloud, env, cluster, file);
+    const existing = store.settings.kubeconfigPaths || [];
+    if (!existing.includes(file)) store.updateSettings({ kubeconfigPaths: [...existing, file] });
+    return { ok: true, kubeconfigPath: file };
+  });
+
+  /*
+   * Databases — `tsh db ls` plus an ephemeral local tunnel (dbproxy.js,
+   * same `ensure()` shape as awsproxy.js) and a query runner per protocol
+   * (dbengines/). See DATABASE_ACCESS_ROADMAP.md.
+   */
+  handle('db:list', async (opts) => dbproxy.listDatabases(opts || {}));
+  handle('db:binStatus', async () => dbbin.ecosystemStatus());
+  handle('db:ensure', async (ref, opts) => dbproxy.ensure(ref?.name, { ...opts, proxy: ref?.proxy }));
+  handle('db:stop', async (ref, opts) => ({ ok: dbproxy.stop(ref?.name, { ...opts, proxy: ref?.proxy }) }));
+  handle('db:stopAll', async () => { dbproxy.stopAll(); return { ok: true }; });
+  handle('db:proxyStatus', async () => dbproxy.status());
+  handle('db:test', async (ref, opts) => {
+    const { port } = await dbproxy.ensure(ref?.name, { ...opts, proxy: ref?.proxy });
+    return dbengines.forProtocol(ref?.protocol).testConnection({ host: '127.0.0.1', port }, opts || {});
+  });
+  handle('db:schema', async (ref, opts) => {
+    const { port } = await dbproxy.ensure(ref?.name, { ...opts, proxy: ref?.proxy });
+    return dbengines.forProtocol(ref?.protocol).listSchema({ host: '127.0.0.1', port }, opts || {});
+  });
+  handle('db:query', async (ref, opts, text) => {
+    const { port } = await dbproxy.ensure(ref?.name, { ...opts, proxy: ref?.proxy });
+    return dbengines.forProtocol(ref?.protocol).runQuery({ host: '127.0.0.1', port }, opts || {}, text);
+  });
+
+  /*
+   * Direct (non-Teleport) database connections — the same dbengines/
+   * adapters, pointed straight at a host:port with a real password instead
+   * of going through dbproxy.js's tunnel. `spec` carries
+   * {protocol, host, port, dbUser, password, dbNameParam}.
+   */
+  handle('db:directTest', async (spec) =>
+    dbengines.forProtocol(spec?.protocol).testConnection({ host: spec?.host, port: spec?.port }, spec || {}));
+  handle('db:directSchema', async (spec) =>
+    dbengines.forProtocol(spec?.protocol).listSchema({ host: spec?.host, port: spec?.port }, spec || {}));
+  handle('db:directQuery', async (spec, text) =>
+    dbengines.forProtocol(spec?.protocol).runQuery({ host: spec?.host, port: spec?.port }, spec || {}, text));
+
+  /*
+   * "Add this database to Teleport" — the Database Service equivalent of
+   * kube.js's "Install Teleport on this cluster" wizard. See dbagent.js:
+   * a CA-signed server cert (teleport.js's signDbCert, same tctl command
+   * used by hand to stand up the two test databases this was built
+   * against), a generated db_service config, and — since a direct
+   * connection already proves this machine can reach the database — an
+   * option to just run the agent locally instead of only printing commands.
+   */
+  handle('db:signCert', async (opts) => teleport.signDbCert(opts || {}));
+  handle('db:agentConfig', async (opts) => ({ text: dbagent.dbAgentConfig(opts || {}) }));
+  handle('db:agentStart', async (opts) => dbagent.start(opts || {}));
+  handle('db:agentStop', async (configPath) => ({ ok: dbagent.stop(configPath) }));
+  handle('db:agentStatus', async () => dbagent.status());
+  // One-click connection file for an external database GUI — DBeaver's
+  // -con flag is ephemeral by default, confirmed against its own docs; see
+  // dbexport.js for why the file it writes is a plain shell script, not a
+  // ServerLife-specific format.
+  handle('db:exportTo', async (ref, opts, target) => dbexport.writeLauncher(ref || {}, opts || {}, target));
+  handle('db:runLauncher', async (filePath, resourceName) => dbexport.runLauncher(filePath, resourceName));
+  handle('db:exportStatus', async () => dbexport.status());
+  handle('db:exportStop', async (resourceName) => ({ ok: dbexport.stop(resourceName) }));
+  handle('apps:tcpReachability', async (app, opts) =>
+    appsproxy.tcpReachability(opts?.proxy || '', vnet.status()));
+  handle('apps:loginStatuses', async (opts) => appsproxy.loginStatuses(opts || {}));
+
   // VNet: one `tsh vnet`, for one cluster at a time, from a cluster's menu.
   handle('vnet:start', async (opts) => vnet.start({
     home: opts?.home || teleport.homeForProxy(opts?.proxy) || null, proxy: opts?.proxy || null,
@@ -2698,6 +2809,10 @@ function registerIpc() {
   handle('kube:helmAddRepo', async (opts) => kubehelm.addRepo(opts?.spec || {}, opts?.target || {}));
   handle('kube:helmInstall', async (opts) => kubehelm.install(opts?.spec || {}, opts?.target || {}));
   handle('kube:helmUpgrade', async (opts) => kubehelm.upgrade(opts?.spec || {}, opts?.target || {}));
+  // The upgrade wizard's "What will run" box, once someone has edited it —
+  // see kubehelm.js's runRaw for why this needs a real shell and nothing
+  // from `spec` (the text is already self-contained).
+  handle('kube:helmRunRaw', async (opts) => kubehelm.runRaw(opts?.text || ''));
   handle('kube:helmSearch', async (opts) => kubehelm.searchCharts(opts?.spec || {}, opts?.target || {}));
   handle('kube:helmReadme', async (opts) => kubehelm.showReadme(opts?.spec || {}, opts?.target || {}));
   // The values-form in the Install/Upgrade wizard — flattened server-side (see kubehelm.js's fieldsFromSchema) so the renderer never has to parse a raw JSON Schema itself.
@@ -4284,6 +4399,8 @@ async function cleanupAndExit() {
     devices?.closeAll();
     vnc?.releaseAll();
     awsproxy.stopAll();
+    dbproxy.stopAll();
+    dbagent.stopAll();
     kubeproxy.stopAll();
     kubelogs.stopAll();
     kubewatch.stopAll();

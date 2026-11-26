@@ -193,12 +193,20 @@ async function listAwsApps({ proxy } = {}) {
  * The IAM roles an app offers. `tsh apps login` prints them and then refuses
  * without `--aws-role`, which is the only way to ask — so the refusal is the
  * answer, and nothing is logged in by running it.
+ *
+ * Logged out first: caught live, a session already logged in to this app
+ * (even from this same picker's own previous run) answers `apps login`
+ * immediately with whatever role it already has instead of refusing with
+ * the list — this used to be treated as "nothing to disambiguate, carry on"
+ * (the `already logged in` check below), which is exactly what made picking
+ * a *different* role impossible after the first choice. Forcing the refusal
+ * every time is what actually lets someone choose.
  */
 async function listAwsRoles(appName, { proxy } = {}) {
   const args = [];
   if (proxy) args.push('--proxy=' + proxy);
-  args.push('apps', 'login', appName);
-  const r = await teleport.run(args, { timeout: 30000 });
+  await teleport.run([...args, 'apps', 'logout', appName], { timeout: 15000 }).catch(() => {});
+  const r = await teleport.run([...args, 'apps', 'login', appName], { timeout: 30000 });
   const text = stripAnsi(`${r.stdout}\n${r.stderr}`);
   const roles = [];
   for (const line of text.split('\n')) {

@@ -2507,10 +2507,32 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
       placeholder: '# values for the upgrade — starts as the release’s current values',
     });
     const dryRunIn = checkbox('Dry run (render the upgrade, change nothing)', true);
-    const cmdBox = el('pre', {
-      style: 'font-family:var(--mono);font-size:11px;white-space:pre-wrap;word-break:break-all;user-select:text;'
-        + 'max-height:160px;overflow:auto;margin:4px 0 0;background:var(--panel-2);border:1px solid var(--border);'
-        + 'border-radius:var(--radius);padding:8px 10px;color:var(--text)',
+    const serverSideSel = select(
+      [{ value: '', label: 'Server-side apply: Auto (Helm decides)' }, { value: 'true', label: 'Server-side apply: On' }, { value: 'false', label: 'Server-side apply: Off' }],
+      '',
+    );
+    const forceConflictsIn = checkbox('Force conflicts', false);
+    forceConflictsIn.title = 'Server-side apply --force-conflicts — takes ownership of fields another manager is fighting it for. Only does anything once server-side apply is actually on, not left on "Auto".';
+    // Edited by hand, this box stops following the wizard's own fields and
+    // becomes the literal thing that runs — the escape hatch for whatever
+    // this form has no field for yet, same spirit as the YAML editor
+    // elsewhere in this file letting an applied manifest be hand-edited
+    // first. `commandPreview` already writes a real, self-contained shell
+    // line (KUBECONFIG, --kube-context, a heredoc for values), so there is
+    // nothing structured left to lose by running the text itself.
+    let cmdEdited = false;
+    const cmdEditedNote = el('div', { class: 'hint', style: 'margin-top:4px;color:var(--amber)', text: 'Edited — this exact text will run, not the fields above.' });
+    cmdEditedNote.classList.add('hidden');
+    const cmdBox = el('textarea', {
+      style: 'width:100%;height:160px;font-family:var(--mono);font-size:11px;white-space:pre;word-break:break-all;'
+        + 'margin:4px 0 0;background:var(--panel-2);border:1px solid var(--border);'
+        + 'border-radius:var(--radius);padding:8px 10px;color:var(--text)', spellcheck: 'false',
+    });
+    cmdBox.addEventListener('input', () => { cmdEdited = true; cmdEditedNote.classList.remove('hidden'); });
+    const resetCmdBtn = el('button', {
+      class: 'ghost-btn sm', text: 'Reset to generated command',
+      title: 'Go back to the command the fields above build, discarding the edit',
+      onClick: () => { cmdEdited = false; cmdEditedNote.classList.add('hidden'); paint(); },
     });
     const out = el('pre', {
       style: 'font-family:var(--mono);font-size:11px;white-space:pre-wrap;word-break:break-word;'
@@ -2546,12 +2568,14 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
     const loadSchemaForm = () => buildSchemaForm(schemaForm, { chartRef: chartRef(), local: isLocalRef(chartRef()), valuesIn, afterUse: paint });
     const target = (extra = {}) => ({
       release: rel.name, namespace: rel.namespace, chartRef: chartRef() || '<repo/chart>',
-      version: versionSel.value || '', valuesYaml: valuesIn.value, dryRun: dryRunIn.input.checked, ...extra,
+      version: versionSel.value || '', valuesYaml: valuesIn.value, dryRun: dryRunIn.input.checked,
+      forceConflicts: forceConflictsIn.input.checked, serverSide: serverSideSel.value, ...extra,
     });
     const paint = async () => {
       chartIn.style.display = chartSel.value === '__other' || !chartSel.options.length ? '' : 'none';
+      if (cmdEdited) return; // the box is now its own answer — see resetCmdBtn to go back
       const r = await window.api.kube.helmUpgrade({ spec: kubeSpec, target: target({ preview: true }) });
-      cmdBox.textContent = r.ok ? r.command : (r.error || '');
+      cmdBox.value = r.ok ? r.command : (r.error || '');
     };
     const loadVersions = async () => {
       clear(versionSel);
@@ -2580,7 +2604,7 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
     chartSel.addEventListener('change', () => { loadVersions(); loadSchemaForm(); });
     chartIn.addEventListener('input', paint);
     chartIn.addEventListener('change', () => { loadVersions(); loadSchemaForm(); });
-    for (const n of [versionSel, dryRunIn.input]) n.addEventListener('change', paint);
+    for (const n of [versionSel, dryRunIn.input, serverSideSel, forceConflictsIn.input]) n.addEventListener('change', paint);
     valuesIn.addEventListener('input', paint);
 
     const vals = await window.api.kube.helmValues({ spec: kubeSpec, target: { release: rel.name, namespace: rel.namespace } });
@@ -2600,29 +2624,40 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
         field('Values', valuesIn, 'These replace the release’s values (--reset-values): what is here is what it gets. Rollback in History undoes an upgrade.'),
         schemaForm,
         dryRunIn,
-        el('div', { style: 'font-size:12px;font-weight:600;margin-top:10px', text: 'What will run' }),
-        cmdBox, out),
+        field('Server-side apply', serverSideSel),
+        forceConflictsIn,
+        el('div', { style: 'display:flex;align-items:baseline;gap:8px;margin-top:10px' },
+          el('div', { style: 'font-size:12px;font-weight:600', text: 'What will run' }),
+          el('div', { class: 'hint', text: '— edit it directly to run something this form has no field for' }),
+          resetCmdBtn),
+        cmdBox, cmdEditedNote, out),
       buttons: [
         { label: 'Close', value: null },
         {
           label: 'Copy command',
-          onClick: async () => { await paint(); await window.api.clipboard.write(cmdBox.textContent); toast('Command copied'); },
+          onClick: async () => { if (!cmdEdited) await paint(); await window.api.clipboard.write(cmdBox.value); toast('Command copied'); },
         },
         {
           label: 'Upgrade', class: 'primary-btn',
           onClick: async () => {
             if (running) return;
-            if (!chartRef()) return toast('Pick or type the chart to upgrade from', 'error');
-            if (!dryRunIn.input.checked) {
-              const ok = await confirm({ title: 'Upgrade release', message: `Upgrade "${rel.name}" in ${rel.namespace}?`, detail: cmdBox.textContent, confirmLabel: 'Upgrade', danger: true });
+            if (!cmdEdited && !chartRef()) return toast('Pick or type the chart to upgrade from', 'error');
+            // An edited box is run exactly as written — whether it is a dry
+            // run is whatever is literally in the text, not the checkbox
+            // above (which only drives the generated command).
+            const looksDryRun = cmdEdited ? /--dry-run\b/.test(cmdBox.value) : dryRunIn.input.checked;
+            if (!looksDryRun) {
+              const ok = await confirm({ title: 'Upgrade release', message: `Upgrade "${rel.name}" in ${rel.namespace}?`, detail: cmdBox.value, confirmLabel: 'Upgrade', danger: true });
               if (!ok) return;
             }
             running = true;
-            out.textContent = `Running helm upgrade${dryRunIn.input.checked ? ' --dry-run' : ''}…`;
+            out.textContent = cmdEdited ? 'Running the edited command…' : `Running helm upgrade${dryRunIn.input.checked ? ' --dry-run' : ''}…`;
             try {
-              const r = await window.api.kube.helmUpgrade({ spec: kubeSpec, target: target() });
+              const r = cmdEdited
+                ? await window.api.kube.helmRunRaw({ text: cmdBox.value })
+                : await window.api.kube.helmUpgrade({ spec: kubeSpec, target: target() });
               out.textContent = r.ok ? (r.output || 'Done.') : 'helm upgrade failed: ' + r.error;
-              if (r.ok && !dryRunIn.input.checked) { toast(`Upgraded ${rel.name}`); loadHelm(); }
+              if (r.ok && !looksDryRun) { toast(`Upgraded ${rel.name}`); loadHelm(); }
             } finally { running = false; }
           },
         },

@@ -11,6 +11,47 @@ tagged `v<version>`.
 
 ---
 
+## [0.42.0] — 2026-11-26
+
+Teleport's applications and databases beside its hosts: apps to log in to,
+launch or open a cloud CLI for, and databases to test, connect to or open in
+DBeaver — with SSH, K8s, Apps and DB as four switches above the list.
+
+### Added
+
+- **Application Access** — Teleport's HTTP, TCP and cloud-CLI (AWS, Azure,
+  GCP) apps, listed per cluster beside its hosts and beams. **Log in**,
+  **Launch in Web UI** and **Open in Net Tools** for an HTTP app; a port
+  check or Telnet, plus a **reachable by name** / **VNet off** badge, for a
+  TCP app; **Open \<cloud\> CLI shell** and **Open Console** for a cloud app.
+  See [GUIDE.md](GUIDE.md#application-access).
+- **SSH / K8s / Apps / DB — four independent on/off switches** above the
+  host list, replacing the old All/SSH/K8s choice. Any combination can be
+  on at once; **Apps** and **DB** default off so neither takes over the
+  sidebar. Remembered across restarts.
+- **Go to Grafana…**, on a cluster's right-click menu: opens that cluster's
+  Grafana app with its dashboard search pre-filled with the cluster's name.
+- **Start VNet / Stop VNet** on the Apps group's own heading, beside the apps
+  that need it running to answer by name — not just the cluster's menu.
+- **Database Access** — Teleport databases, listed per cluster beside its
+  hosts, beams and apps, with **Test** (a real connectivity and identity
+  check through a `tsh proxy db --tunnel`) and **Connect** (a terminal
+  running `tsh db connect`) per row. The database user — and, for engines
+  that need one, the database name — is typed once per database and
+  remembered; Teleport has no way to know either on its own for a
+  self-hosted database. See [GUIDE.md](GUIDE.md#database-access).
+- **Export a database connection to DBeaver** — open it now, already
+  connected through its own Teleport tunnel, or save a launcher to run later
+  without ServerLife; the user field suggests the users Teleport allows.
+
+### Changed
+
+- **A cloud CLI shell (AWS, Azure, GCP) opens as a split beside whatever pane
+  is already open**, the same as opening another host beside one, instead of
+  always starting a new tab.
+
+---
+
 ## [0.41.0] — 2026-11-20
 
 The sidebar and the AI panel on any side, at any size; more ways to start a

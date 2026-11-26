@@ -334,6 +334,13 @@ The short version:
   - **Stars**, port-forwards and `tsh proxy kube`, k9s and a ready shell,
     access requests and MFA marking for kube clusters, and an offer to
     reconnect your clusters after logging in again.
+- **Application Access** — Teleport's HTTP, TCP and cloud-CLI apps, listed
+  per cluster beside its hosts and beams, behind their own on/off switch so
+  they never take over the sidebar. Log in or launch an HTTP app in the
+  browser, open a TCP app's status through VNet, or drop into an Azure/GCP/AWS
+  CLI shell with its credentials already set — split beside whatever session
+  is already open rather than a new tab. See
+  [GUIDE.md](GUIDE.md#application-access).
 - **Put an SSH host behind Teleport** — a connected host with no Teleport agent
   gets ⚡ *Add to Teleport*: the chosen cluster's own `install.sh` (its exact
   version, with managed updates), then `teleport node configure` with a node

@@ -769,6 +769,14 @@ export async function openClusterStatus(p) {
           openNetTools({ host: p.proxy, tool: 'teleport' });
         },
       },
+      {
+        label: 'Apps pane…',
+        title: 'Every app on this cluster in one pane — log in, launch, or start proxying any of them from there',
+        onClick: async () => {
+          const { openAppsPaneFor } = await import('./sidebar.js');
+          openAppsPaneFor(p);
+        },
+      },
     ],
   });
 }

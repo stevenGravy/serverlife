@@ -24,7 +24,7 @@ import { modal } from './ui.js';
  * seen it. Stored rather than a boolean so that "seen" can mean "seen this
  * much" — a returning user is not re-toured for a typo fix.
  */
-export const TOUR_VERSION = 6;
+export const TOUR_VERSION = 7;
 
 /**
  * The script.
@@ -222,9 +222,11 @@ const STEPS = [
   {
     title: 'Kubernetes clusters, the same way',
     target: '#sb-kind-filter',
-    body: 'K8s here switches the Resources list to just Kubernetes clusters — reached '
-      + 'through Teleport’s own kube proxy or a plain kubeconfig, listed beside your '
-      + 'SSH hosts rather than off in a tab of their own.\n\n'
+    body: 'K8s here is its own on/off switch, beside SSH, Apps and DB — any combination '
+      + 'can be on at once, so turning Kubernetes on never hides your SSH hosts (or '
+      + 'the other way round). Kubernetes clusters are reached through Teleport’s own '
+      + 'kube proxy or a plain kubeconfig, listed beside your SSH hosts rather than off '
+      + 'in a tab of their own.\n\n'
       + 'Click a cluster to expand its namespaces, then a namespace for its pods. '
       + 'Click a pod to exec straight in beside the pane you’re already looking at '
       + '(double-click for a tab of its own); right-click for logs (including a '
@@ -233,6 +235,37 @@ const STEPS = [
       + 'need to open anything else just to see what’s live, or to stop it.\n\n'
       + 'All of KubeLife is one setting to turn off entirely — Settings → '
       + 'KubeLife — for anyone who only needs SSH.',
+  },
+  {
+    title: 'Apps — logged in, launched, or a CLI shell away',
+    target: '#sb-kind-filter',
+    body: 'Apps is one of the switches beside SSH and K8s — off by default, so it '
+      + 'never takes up room until you ask for it. Turn it on and every cluster gets '
+      + 'an "Apps" group listing its Teleport applications.\n\n'
+      + 'An HTTP app gets Log in, Launch in Web UI, and Open in Net Tools. A TCP app '
+      + 'shows whether it is reachable by name right now — VNet has to be running '
+      + 'for that cluster — with a Start VNet button right on the group’s own heading. '
+      + 'A cloud app (AWS, Azure, GCP) gets Open ‹cloud› CLI shell: a terminal '
+      + 'with its credentials already set, split beside whatever pane is already open '
+      + 'rather than a new tab.\n\n'
+      + 'A cluster’s own right-click menu also has Go to Grafana…, once it has a '
+      + 'Grafana app — opens straight to a dashboard search for that cluster.',
+  },
+  {
+    title: 'DB — a database user Teleport can’t guess for you',
+    target: '#sb-kind-filter',
+    body: 'DB is the last of the four switches — off by default like Apps. Turn it on '
+      + 'and every cluster gets a "Databases" group listing what Teleport proxies for '
+      + 'it: Postgres, MySQL, and whatever else that cluster has.\n\n'
+      + 'The tricky part, and the reason each row has its own small text fields: '
+      + 'Teleport cannot know which database user — or, for engines that need one, '
+      + 'which database name — actually exists on a self-hosted backend. Its "allowed '
+      + 'users" is a grant list, often just "anyone," not an account directory. Type '
+      + 'the real ones once and they are remembered, per cluster and database, from '
+      + 'then on.\n\n'
+      + 'Test opens a real tunnel and asks the database who it is connected as — a '
+      + 'genuine check, not just "the resource exists." Connect opens a terminal '
+      + 'running tsh db connect, titled with the database’s own name.',
   },
   {
     title: 'The full cluster browser',
