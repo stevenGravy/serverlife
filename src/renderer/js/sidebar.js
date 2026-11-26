@@ -33,6 +33,7 @@ import { startNodeLoop } from './nodewatch.js';
 import {
   kubeGroupRows, kubeGroupCount, kubeHostsForProfile,
   kubeContextRow, availableClusterRow, kubeMarks, openKubeHostMenu, refreshKubeFor,
+  listedKubeContexts, kubeBrowseSpec,
 } from './kubepanel.js';
 import { isNarrowed, noteRead, heldBackFor, lastFullReadFor } from './narrowed.js';
 import {
@@ -4158,6 +4159,32 @@ async function openX11(host, login) {
 }
 
 /**
+ * The same session, with a chosen Kubernetes cluster already set up in its
+ * KUBECONFIG — the SSH-terminal counterpart of kubepanel.js's own
+ * openEcosystemShell() for a local shell.
+ */
+async function openWithKubeContext(host, login, c) {
+  login = login || preferredLogin(host);
+  try {
+    status(`Connecting to ${host.name || host.alias}…`, 0);
+    const spec = await kubeBrowseSpec(c);
+    const env = await window.api.kube.kubeconfigEnv(spec);
+    const pane = await openHost(host, { login, kubeEnv: env });
+    status('');
+    // Same limitation openEcosystemShell's plain-shell branch has: a
+    // merged kubeconfig with more than one context still needs --context
+    // typed by hand, so the same helper strip offers it ready-made.
+    if (!spec.viaProxy) {
+      attachCloudHelper(pane, { cloud: 'K8s', name: c.kubeClusterName || c.name, contextArg: '--context=' + c.contextName });
+    }
+    toast(`${c.kubeClusterName || c.name} is set up in this shell’s KUBECONFIG`);
+  } catch (e) {
+    toast(e.message, 'error');
+    status('');
+  }
+}
+
+/**
  * The same connection, without a terminal on it — for when the session is
  * about moving files and a shell is just something else on screen. With `dir`
  * it lands beside the focused pane instead of in a tab of its own, which is
@@ -4541,6 +4568,7 @@ async function onHostContextMenu(e, host, ctx = {}) {
   const logins = loginOptionsFor(host);
   const preferred = preferredLogin(host);
   const inTmux = opensInTmux(host);
+  const kubeContexts = listedKubeContexts();
   // Something has to be on screen for "beside it" to mean anything.
   const canSplit = !!state.activePane;
   /*
@@ -4622,6 +4650,14 @@ async function onHostContextMenu(e, host, ctx = {}) {
         ...(canSplit ? [
           { label: 'Split right', onClick: () => openFilesOnly(host, preferred, 'row') },
           { label: 'Split down', onClick: () => openFilesOnly(host, preferred, 'col') },
+        ] : []),
+        ...(kubeContexts.length ? [
+          { sep: true },
+          { heading: true, label: 'With a Kubernetes context' },
+          ...kubeContexts.map((c) => ({
+            label: c.kubeClusterName || c.name,
+            onClick: () => openWithKubeContext(host, preferred || logins[0], c),
+          })),
         ] : []),
       ],
     },

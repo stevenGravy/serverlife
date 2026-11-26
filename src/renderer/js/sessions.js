@@ -63,7 +63,7 @@ export function connPayload(host) {
  * Create (or reuse) a connection for a host descriptor, then open a session
  * tab for it. Returns the pane that was created.
  */
-export async function openHost(host, { login, reuse = true, profileId, startupCommand, remoteStartPath, x11, transport, mfaMode, sshOptions, profileSshOptions, filesOnly = false } = {}) {
+export async function openHost(host, { login, reuse = true, profileId, startupCommand, remoteStartPath, x11, transport, mfaMode, sshOptions, profileSshOptions, filesOnly = false, kubeEnv } = {}) {
   // An X11 session needs its own connection: forwarding is negotiated on the
   // master, so it cannot be switched on for an already-open one. The same goes
   // for any SSH options given for this one opening — forwards, a jump host —
@@ -118,6 +118,7 @@ export async function openHost(host, { login, reuse = true, profileId, startupCo
   const conn = state.getConnection(connId);
   const tab = state.createTab({ title: conn.label, kind: 'remote', connId });
   const pane = await createPane({ tabId: tab.id, kind: 'remote', connId });
+  pane.kubeEnv = kubeEnv || null;
   tab.root = paneNode(pane.id);
   state.activeTabId = tab.id;
   state.setActivePane(pane.id);
@@ -1150,6 +1151,15 @@ async function createPane({ tabId, kind, connId, cwd, graphic = false, explorerS
   state.on('teleportPresence', syncTeleportBtn);
   setTimeout(syncTeleportBtn, 0);
 
+  // Shown only while something in the terminal is selected — the same copy
+  // the right-click menu's "Copy" already does, one click closer for a
+  // selection made to be copied rather than acted on from a menu.
+  const copyBtn = el('button', {
+    class: 'icon-btn sm pcopy hidden', text: '⧉',
+    title: 'Copy selection',
+    onClick: (e) => { e.stopPropagation(); window.api.clipboard.write(view.selection()); },
+  });
+
   const head = el('div', { class: 'pane-head', draggable: 'true' },
     el('span', {
       class: 'pname',
@@ -1160,6 +1170,7 @@ async function createPane({ tabId, kind, connId, cwd, graphic = false, explorerS
     // The search sits on the right, over the terminal — next to the title it
     // reads as though it searches the file explorer below it.
     el('span', { class: 'spacer', style: 'flex:1' }),
+    copyBtn,
     searchBox.element,
     hlBtn,
     netBtn,
@@ -1179,6 +1190,7 @@ async function createPane({ tabId, kind, connId, cwd, graphic = false, explorerS
     onInput: (data) => handleInput(id, data),
     onResize: (cols, rows) => handleResize(id, cols, rows),
     onTitle: (t) => { const p = state.getPane(id); if (p) { p.remoteTitle = t; state.emit('tabs'); } },
+    onSelectionChange: (has) => copyBtn.classList.toggle('hidden', !has),
   });
 
   element.addEventListener('mousedown', () => state.setActivePane(id));
@@ -1705,7 +1717,7 @@ async function startRemoteTerm(pane) {
   const cols = pane.view.cols || 100;
   const rows = pane.view.rows || 30;
   const termId = uid('term');
-  await window.api.term.open(pane.connId, { id: termId, cols, rows });
+  await window.api.term.open(pane.connId, { id: termId, cols, rows, env: pane.kubeEnv });
   pane.termId = termId;
   syncPtySize(pane);
   pane.view.focus();

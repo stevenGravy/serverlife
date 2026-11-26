@@ -59,6 +59,9 @@ let loaded = false;
 let loading = false;
 let lastError = '';
 
+/** The logged-in kube contexts read so far — for menus elsewhere that need the raw list. */
+export function listedKubeContexts() { return contexts; }
+
 /** Kicks off a read on first use; later calls just redraw from what's cached. */
 function ensureLoaded() {
   // Heartbeats — idle unless Heartbeats is on (kubeheartbeat.js): the contexts read

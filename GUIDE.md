@@ -145,6 +145,8 @@ listing so it never slows the files down, and remembered for half a minute
 per folder. A host that asks for MFA per session shows no figure rather than
 spend an approval on it.
 
+- **⧉ Copy** appears in the pane header while something in the terminal is
+  selected — the same copy as the right-click menu's, one click closer.
 - **Scrollback search** in each pane header, beside the host name: type and
   every match highlights across the whole buffer with a live `3/17` counter.
   `⌘F` focuses it (and picks up the current selection), Enter and Shift+Enter
@@ -2309,6 +2311,10 @@ means. It is being added in stages; this section grows as each one lands.
   kube)* on the same menu ends the tunnel, and Refresh in a browser left open
   starts it again. It gets no background heartbeat, since asking would mean
   a prompt nobody is there to answer.
+- **A server session with a cluster set up**: a host's menu → *With a
+  Kubernetes context* → a cluster opens the session with KUBECONFIG pointed
+  at it, and a helper strip offers the `--context=` to add when the
+  kubeconfig holds more than one.
 - **A namespace you can use but not list**: a role scoped to one namespace
   can't list namespaces, so the tree has nothing to show. *Type a
   namespace…* at the foot of the tree (and in the full browser's Namespace

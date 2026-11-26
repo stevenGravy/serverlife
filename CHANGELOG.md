@@ -11,6 +11,20 @@ tagged `v<version>`.
 
 ---
 
+## [0.42.1] — 2026-11-26
+
+A server session with a Kubernetes cluster set up in it, and a copy button
+for what is selected in a terminal.
+
+### Added
+
+- **A session with a Kubernetes context** — a host's menu → *With a
+  Kubernetes context* → a cluster opens the session with KUBECONFIG pointed
+  at it.
+- **⧉ Copy in a pane's header** while something in the terminal is selected.
+
+---
+
 ## [0.42.0] — 2026-11-26
 
 Teleport's applications and databases beside its hosts: apps to log in to,

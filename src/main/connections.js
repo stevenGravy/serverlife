@@ -1100,7 +1100,7 @@ class Connection extends EventEmitter {
   }
 
   /** Open an interactive shell (or run a command) over the mux. */
-  async openTerminal({ id, cols = 100, rows = 30, command = null }) {
+  async openTerminal({ id, cols = 100, rows = 30, command = null, env = null }) {
     await this.connect();
     const isBeam = this.transport === 'beam';
     const useTsh = this.transport === 'tsh' || isBeam;
@@ -1125,7 +1125,7 @@ class Connection extends EventEmitter {
       name: 'xterm-256color',
       cols, rows,
       cwd: os.homedir(),
-      env: this.procEnv({ TERM: 'xterm-256color' }),
+      env: this.procEnv({ TERM: 'xterm-256color', ...(env || {}) }),
     });
 
     const rec = { id, term, cols, rows, title: this.label, cwd: null, logStream: null, logPath: null };

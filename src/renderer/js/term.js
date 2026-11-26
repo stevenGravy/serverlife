@@ -100,10 +100,11 @@ export const THEME = DARK_THEME;
  * plumbing. Byte transport is supplied by the caller via `onInput` / `write`.
  */
 export class TermView {
-  constructor({ settings, onInput, onResize, onTitle }) {
+  constructor({ settings, onInput, onResize, onTitle, onSelectionChange }) {
     this.onInput = onInput;
     this.onResize = onResize;
     this.onTitle = onTitle;
+    this.onSelectionChange = onSelectionChange;
     this.disposed = false;
 
     this.term = new Terminal({
@@ -165,6 +166,7 @@ export class TermView {
     this.term.onBinary((d) => this.onInput?.(d));
     this.term.onTitleChange((t) => this.onTitle?.(t));
     this.term.onResize(({ cols, rows }) => this.onResize?.(cols, rows));
+    this.term.onSelectionChange(() => this.onSelectionChange?.(this.term.hasSelection()));
 
     /*
      * OSC 52 is how a remote program — tmux's own mouse-copy, vim, a coding
