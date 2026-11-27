@@ -80,6 +80,10 @@ appear in the connecting pane with an input box, once.
 into panes. `⌘⇧D` / `⌘⇧E` split with the *same* host; `⌘⌥D` / `⌘⌥E` (or
 right-click a host → *Open beside current*) split with a **different** one — so
 two servers sit next to each other horizontally, or one above the other.
+Right-click a pane or a tab → **Split right** / **Split down** splits the same
+way when clicked; its arrow offers the three directions a split can go — the
+same host again (another terminal on the connection already open), a **local
+shell** beside a server, or another host.
 
 **The tabs say what each session is doing.** Beside the connection dot, three
 small bars **ripple while output is arriving** — so the tab running the build
@@ -2311,6 +2315,22 @@ means. It is being added in stages; this section grows as each one lands.
   kube)* on the same menu ends the tunnel, and Refresh in a browser left open
   starts it again. It gets no background heartbeat, since asking would mean
   a prompt nobody is there to answer.
+- **A shell on a cluster**: right-click it → *Open a shell here* (its arrow:
+  *In a new tab*, *Split right*, *Split down*), or **>_ Shell** in the cluster
+  browser's toolbar, which opens one below it the way an exec does. Each
+  shell has **its own kubeconfig** holding just that cluster, so a shell on
+  eu-west-2 stays on eu-west-2 whatever another shell, or a `tsh kube
+  login`, does to your shared kubeconfig. `⌘⇧D` / `⌘⇧E` in one opens another
+  shell on the same cluster. No file browser opens beside it. The **K8s
+  helper** beside it is a tree of commands — Overview, Workloads, Problems,
+  Resources, Network, Config & storage, Nodes, Access, Events, Extensions,
+  Helm — each group opened and shut by its heading, and a box to find a
+  command; hover one to see exactly what it will run. Its **Namespace**
+  picker lists the cluster's namespaces under ▾ (and any typed before), or
+  takes one typed in; *All namespaces* is the default. The line under it
+  says what is in force: the helper's commands use it (`-n it`, or `-A`), and
+  so does kubectl typed in that shell, since the choice is written to the
+  shell's own kubeconfig — no other shell, and not your own kubeconfig.
 - **A server session with a cluster set up**: a host's menu → *With a
   Kubernetes context* → a cluster opens the session with KUBECONFIG pointed
   at it, and a helper strip offers the `--context=` to add when the

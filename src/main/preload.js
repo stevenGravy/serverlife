@@ -280,6 +280,8 @@ contextBridge.exposeInMainWorld('api', {
     nodeDebugSpec: (opts) => call('kube:nodeDebugSpec', opts),
     logSpec: (opts) => call('kube:logSpec', opts),
     kubeconfigEnv: (opts) => call('kube:kubeconfigEnv', opts),
+    shellKubeconfig: (opts) => call('kube:shellKubeconfig', opts),
+    setShellNamespace: (opts) => call('kube:setShellNamespace', opts),
     // The Log Viewer: lines pushed as they arrive, not a PTY. See kubelogs.js.
     logsStart: (opts) => call('kube:logsStart', opts),
     logsStop: (opts) => call('kube:logsStop', opts),

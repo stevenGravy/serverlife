@@ -2371,6 +2371,12 @@ export async function splitActivePane(dir, opts = {}) {
     const { preferredLogin } = await import('./sidebar.js');
     return splitActivePane(dir, { ...opts, host: picked[0], login: opts.login || preferredLogin(picked[0]) });
   }
+  // A cluster shell's bare split is another shell on the same cluster —
+  // with a kubeconfig of its own, the same as the one it came from.
+  if (!opts.host && !opts.local && !opts.hosts && !opts.apps && pane.kubeShellCtx) {
+    const { openEcosystemShell } = await import('./kubepanel.js');
+    return openEcosystemShell(pane.kubeShellCtx, null, { dir });
+  }
   // Same reasoning again for the apps pane: a bare split off it is "more of
   // the same", not a disconnected local shell.
   if (!opts.host && !opts.local && !opts.hosts && !opts.apps && pane.isApps) {
@@ -3321,6 +3327,12 @@ export function paneTitle(pane, { long = false } = {}) {
   if (pane.kubeExec) return pane.title || 'kube exec';
   // Same reasoning, for a `kubectl logs -f` pane (see kubepanel.js's openPodLogs).
   if (pane.kubeLogs) return pane.title || 'kube logs';
+  // A cluster shell says which cluster it is on — the thing two of them side
+  // by side most need to tell apart — with the directory after it.
+  if (pane.kubeShellCtx) {
+    const where = pane.cwd ? shortCwd(pane.cwd) : '';
+    return [pane.title || 'shell', where].filter(Boolean).join(' \u00b7 ');
+  }
   // Same reasoning again for a `tsh db connect` pane (see sidebar.js's
   // openDbConnect) — a 'local' pane underneath, read as the database it is
   // connected to rather than as the directory the process started from.
@@ -3753,10 +3765,7 @@ function onPaneContextMenu(e, paneId) {
       },
     ]),
     { sep: true },
-    { label: 'Split right — same tab', icon: '\u216E', key: '⌘⇧D', onClick: () => splitActivePane('row') },
-    { label: 'Split down — same tab', icon: '\u2017', key: '⌘⇧E', onClick: () => splitActivePane('col') },
-    { label: 'Split right — another host…', icon: '\u216E', onClick: () => pickHostForSplit('row') },
-    { label: 'Split down — another host…', icon: '\u2017', onClick: () => pickHostForSplit('col') },
+    ...splitMenuItems(pane),
     {
       label: 'Move this pane', icon: '\u2725',
       disabled: state.panesOf(pane.tabId).length < 2,
@@ -3858,6 +3867,35 @@ function onPaneContextMenu(e, paneId) {
 }
 
 /** Choose a host, then split the focused pane with it. */
+/**
+ * *Split right* and *Split down*, each opening more of what this pane is on
+ * when clicked — the same host again (a second terminal on the connection
+ * already open, with its file browser following it), another local shell,
+ * another tmux pane — and, on its arrow, the other two ways a split can go:
+ * a local shell beside a server, or a different host. The pane menu and the
+ * tab menu both use these, so neither offers less than the other.
+ */
+export function splitMenuItems(pane = state.activePane) {
+  const conn = pane?.connId ? state.getConnection(pane.connId) : null;
+  const same = !pane ? 'A local shell'
+    : pane.kind === 'tmux' ? 'A new tmux pane'
+      : pane.isHosts ? 'Another hosts view'
+        : pane.isApps ? 'Another apps view'
+          : pane.kind === 'local' ? 'Another local shell'
+            : `${conn?.label || 'This host'} again`;
+  const item = (dir, label, icon, key) => ({
+    label, icon, key,
+    onClick: () => splitActivePane(dir),
+    submenu: [
+      { label: same, key, onClick: () => splitActivePane(dir) },
+      pane?.kind === 'local' && !pane.isHosts && !pane.isApps ? null
+        : { label: 'Local shell', onClick: () => splitActivePane(dir, { local: true }) },
+      { label: 'Another host\u2026', onClick: () => pickHostForSplit(dir) },
+    ].filter(Boolean),
+  });
+  return [item('row', 'Split right', '\u216E', '⌘⇧D'), item('col', 'Split down', '\u2017', '⌘⇧E')];
+}
+
 export async function pickHostForSplit(dir) {
   const { pickHost } = await import('./profiles.js');
   const choice = await pickHost({ title: dir === 'row' ? 'Split right with…' : 'Split down with…' });

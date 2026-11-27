@@ -5862,12 +5862,55 @@ const CLOUD_COMMANDS = {
     { label: 'Storage accounts', command: 'az storage account list -o table' },
     { label: 'Current subscription', command: 'az account show --query name -o tsv' },
   ],
+  /*
+   * A tree, not a list: `section` groups them, and `NS` is replaced by the
+   * helper's Namespace box — `-n <it>`, or `-A` when it is empty — so one
+   * entry serves a single namespace and the whole cluster alike.
+   */
   K8s: [
-    { label: 'Who am I', command: 'kubectl auth can-i --list' },
-    { label: 'Current context', command: 'kubectl config current-context' },
-    { label: 'Pods (all namespaces)', command: 'kubectl get pods -A' },
-    { label: 'Nodes', command: 'kubectl get nodes' },
-    { label: 'Namespaces', command: 'kubectl get namespaces' },
+    { section: 'Overview', label: 'Current context', command: 'kubectl config current-context' },
+    { section: 'Overview', label: 'Cluster info', command: 'kubectl cluster-info' },
+    { section: 'Overview', label: 'Server version', command: 'kubectl version' },
+    { section: 'Overview', label: 'Who am I', command: 'kubectl auth whoami' },
+    { section: 'Overview', label: 'What can I do', command: 'kubectl auth can-i --list NS' },
+    { section: 'Overview', label: 'Namespaces', command: 'kubectl get namespaces' },
+    { section: 'Overview', label: 'Everything here', command: 'kubectl get all NS' },
+    { section: 'Workloads', label: 'Pods', command: 'kubectl get pods NS -o wide' },
+    { section: 'Workloads', label: 'Deployments', command: 'kubectl get deployments NS' },
+    { section: 'Workloads', label: 'StatefulSets', command: 'kubectl get statefulsets NS' },
+    { section: 'Workloads', label: 'DaemonSets', command: 'kubectl get daemonsets NS' },
+    { section: 'Workloads', label: 'ReplicaSets', command: 'kubectl get replicasets NS' },
+    { section: 'Workloads', label: 'Jobs and CronJobs', command: 'kubectl get jobs,cronjobs NS' },
+    { section: 'Workloads', label: 'Rollout status (deployments)', command: 'kubectl rollout status deployment NS --timeout=10s' },
+    { section: 'Problems', label: 'Pods not running', command: 'kubectl get pods NS --field-selector=status.phase!=Running,status.phase!=Succeeded' },
+    { section: 'Problems', label: 'Most restarts', command: 'kubectl get pods NS --sort-by=\'.status.containerStatuses[0].restartCount\'' },
+    { section: 'Problems', label: 'Warning events', command: 'kubectl get events NS --field-selector=type=Warning --sort-by=.lastTimestamp' },
+    { section: 'Problems', label: 'Pending PVCs', command: 'kubectl get pvc NS --field-selector=status.phase!=Bound' },
+    { section: 'Resources', label: 'Top nodes', command: 'kubectl top nodes' },
+    { section: 'Resources', label: 'Top pods', command: 'kubectl top pods NS --sort-by=cpu' },
+    { section: 'Resources', label: 'Quotas and limits', command: 'kubectl get resourcequota,limitrange NS' },
+    { section: 'Resources', label: 'Autoscalers', command: 'kubectl get hpa NS' },
+    { section: 'Network', label: 'Services', command: 'kubectl get services NS' },
+    { section: 'Network', label: 'Ingresses', command: 'kubectl get ingress NS' },
+    { section: 'Network', label: 'Endpoints', command: 'kubectl get endpoints NS' },
+    { section: 'Network', label: 'Network policies', command: 'kubectl get networkpolicies NS' },
+    { section: 'Config & storage', label: 'ConfigMaps', command: 'kubectl get configmaps NS' },
+    { section: 'Config & storage', label: 'Secrets (names only)', command: 'kubectl get secrets NS' },
+    { section: 'Config & storage', label: 'PersistentVolumeClaims', command: 'kubectl get pvc NS' },
+    { section: 'Config & storage', label: 'PersistentVolumes', command: 'kubectl get pv' },
+    { section: 'Config & storage', label: 'StorageClasses', command: 'kubectl get storageclass' },
+    { section: 'Nodes', label: 'Nodes', command: 'kubectl get nodes -o wide' },
+    { section: 'Nodes', label: 'Node conditions', command: 'kubectl describe nodes | grep -A8 Conditions:' },
+    { section: 'Nodes', label: 'Taints', command: 'kubectl get nodes -o custom-columns=NAME:.metadata.name,TAINTS:.spec.taints' },
+    { section: 'Access', label: 'Service accounts', command: 'kubectl get serviceaccounts NS' },
+    { section: 'Access', label: 'Roles and bindings', command: 'kubectl get roles,rolebindings NS' },
+    { section: 'Access', label: 'ClusterRoleBindings', command: 'kubectl get clusterrolebindings' },
+    { section: 'Events', label: 'Recent events', command: 'kubectl get events NS --sort-by=.lastTimestamp' },
+    { section: 'Events', label: 'Watch events', command: 'kubectl get events NS --watch' },
+    { section: 'Extensions', label: 'Custom resource definitions', command: 'kubectl get crds' },
+    { section: 'Extensions', label: 'API resources', command: 'kubectl api-resources' },
+    { section: 'Helm', label: 'Releases', command: 'helm list NS' },
+    { section: 'Helm', label: 'Repositories', command: 'helm repo list' },
   ],
   // Not wired to anything yet — Database Access itself is still unbuilt
   // (see DATABASE_ACCESS_ROADMAP.md), so there is no session for this to
@@ -5888,6 +5931,9 @@ const CLOUD_COMMANDS = {
  * explorer there, and writing over it only lasted until that explorer's
  * own init ran and replaced it right back.
  */
+/* Which helper sections were shut, per cloud — kept for the session, so a new shell opens the same way. */
+const helperShut = new Map();
+
 export function attachCloudHelper(pane, app) {
   if (!pane?.body) return;
   const commands = CLOUD_COMMANDS[app.cloud] || [];
@@ -5897,23 +5943,121 @@ export function attachCloudHelper(pane, app) {
   // appended (`--context=foo`, or '' when the kubeconfig already has
   // exactly one). Other clouds never set this.
   const withContext = (command) => (app.contextArg ? `${command} ${app.contextArg}` : command);
-  const run = (command) => sendToPane(pane, withContext(command).replace(/\n*$/, '') + '\n');
+  /*
+   * The namespace, for K8s: a box to type in with a ▾ listing the cluster's
+   * own (and any typed there before), All namespaces first. What it says is
+   * what the helper's commands use (`-n it`, or `-A`), and — through the
+   * shell's own kubeconfig (app.onNamespace) — what kubectl typed by hand
+   * in this shell uses too. Nothing but this shell changes.
+   */
+  let nsInput = null;
+  let nsRow = null;
+  let nsNote = null;
+  let namespaces = null;            // null while not read yet
+  let nsCurrent = (app.namespace || '').trim();
+  const nsArg = () => (nsCurrent ? `-n ${nsCurrent}` : '-A');
+  if (app.cloud === 'K8s') {
+    const list = el('datalist', { id: `ns-list-${Math.random().toString(36).slice(2, 8)}` });
+    nsInput = textInput({ placeholder: 'All namespaces', value: nsCurrent, list: list.id });
+    nsNote = el('div', { class: 'hint ns-scope', style: 'margin:2px 0 4px' });
+    const sayScope = () => {
+      nsNote.textContent = nsCurrent
+        ? (app.onNamespace ? `kubectl here works in ${nsCurrent}` : `The commands below use -n ${nsCurrent}`)
+        : 'All namespaces — the commands below add -A';
+    };
+    const apply = async (value) => {
+      const ns = String(value || '').trim();
+      if (ns && !/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test(ns)) { toast(`"${ns}" is not a namespace name`, 'error'); nsInput.value = nsCurrent; return; }
+      nsInput.value = ns;
+      if (ns === nsCurrent) return;
+      nsCurrent = ns;
+      sayScope();
+      if (app.onNamespace) {
+        const r = await app.onNamespace(ns).catch((e) => ({ ok: false, error: e.message }));
+        if (!r?.ok) toast(r?.error || 'Could not set the shell\u2019s namespace', 'error');
+      }
+    };
+    const fill = () => list.replaceChildren(...(namespaces || []).map((n) => el('option', { value: n })));
+    const load = async () => {
+      if (namespaces || !app.loadNamespaces) return;
+      namespaces = [];
+      try { namespaces = await app.loadNamespaces(); } catch { namespaces = []; }
+      fill();
+    };
+    load();
+    nsInput.addEventListener('change', () => apply(nsInput.value));
+    nsInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); apply(nsInput.value); nsInput.blur(); }
+      if (e.key === 'Escape') { nsInput.value = nsCurrent; nsInput.blur(); }
+    });
+    const pick = el('button', {
+      class: 'ghost-btn sm', text: '\u25BE', title: 'Choose a namespace',
+      onClick: async (e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        await load();
+        const tick = (n) => (n === nsCurrent ? '\u2713' : '');
+        contextMenu(r.left, r.bottom + 4, [
+          { label: 'All namespaces', icon: tick(''), onClick: () => apply('') },
+          { sep: true },
+          ...(namespaces.length
+            ? namespaces.map((n) => ({ label: n, icon: tick(n), onClick: () => apply(n) }))
+            : [{ label: 'None listed — type one in the box', disabled: true }]),
+        ]);
+      },
+    });
+    nsRow = el('div', {},
+      el('label', { class: 'hint', style: 'display:block;margin-bottom:3px', text: 'Namespace' }),
+      el('div', { style: 'display:flex;gap:4px' }, nsInput, pick), list, nsNote);
+    sayScope();
+  }
+  const expand = (command) => withContext(command.replace(/\bNS\b/g, nsArg()));
+  const run = (command) => sendToPane(pane, expand(command).replace(/\n*$/, '') + '\n');
   const customInput = textInput({ placeholder: { AWS: 'aws ...', GCP: 'gcloud ...', Azure: 'az ...', K8s: 'kubectl ...', Database: 'SELECT ...' }[app.cloud] || '' });
-  const root = el('div', {
-    class: 'cloud-helper',
-    style: 'flex:none;width:210px;overflow-y:auto;border-left:1px solid var(--border-soft);padding:8px;',
-  },
+  const filterInput = commands.length > 8 ? textInput({ placeholder: 'Find a command…' }) : null;
+
+  const shut = helperShut.get(app.cloud) || new Set();
+  helperShut.set(app.cloud, shut);
+  const tree = el('div', { class: 'helper-tree' });
+  const draw = () => {
+    const q = (filterInput?.value || '').trim().toLowerCase();
+    const shown = commands.filter((c) => !q || c.label.toLowerCase().includes(q) || c.command.toLowerCase().includes(q));
+    const sections = [];
+    for (const c of shown) {
+      const name = c.section || '';
+      let sec = sections.find((x) => x.name === name);
+      if (!sec) { sec = { name, items: [] }; sections.push(sec); }
+      sec.items.push(c);
+    }
+    tree.replaceChildren(...sections.flatMap((sec) => {
+      const isShut = !q && sec.name && shut.has(sec.name);
+      const head = sec.name ? el('div', {
+        class: 'helper-sec', title: isShut ? 'Show these' : 'Hide these',
+        onClick: () => { if (shut.has(sec.name)) shut.delete(sec.name); else shut.add(sec.name); draw(); },
+      }, el('span', { class: 'chev', text: isShut ? '\u25B6' : '\u25BC' }), el('span', { text: sec.name }),
+      el('span', { class: 'count', text: String(sec.items.length) })) : null;
+      const rows = isShut ? [] : sec.items.map((c) => el('button', {
+        class: 'ghost-btn sm helper-cmd', text: c.label,
+        // The exact command, with this shell's namespace in it, on hover.
+        onmouseenter: (e) => { e.currentTarget.title = expand(c.command); },
+        onClick: () => run(c.command),
+      }));
+      return [head, ...rows].filter(Boolean);
+    }));
+    if (!shown.length) tree.append(el('div', { class: 'hint', text: 'Nothing matches.' }));
+  };
+  filterInput?.addEventListener('input', draw);
+  draw();
+
+  const root = el('div', { class: 'cloud-helper' },
     el('div', { style: 'display:flex;align-items:center;gap:6px;padding:0 0 6px' },
       el('div', { class: 'sb-group-head', style: 'cursor:default;padding:0;flex:1', text: `${app.cloud} — ${app.name}` }),
       el('button', {
         class: 'icon-btn sm', text: '×', title: 'Close this helper',
         onClick: () => root.remove(),
       })),
-    ...commands.map((c) => el('button', {
-      class: 'ghost-btn sm', text: c.label, title: withContext(c.command),
-      style: 'display:block;width:100%;text-align:left;margin-bottom:4px',
-      onClick: () => run(c.command),
-    })),
+    nsRow,
+    filterInput,
+    tree,
     el('div', { style: 'margin:10px 0;border-top:1px solid var(--border-soft)' }),
     el('div', { class: 'hint', style: 'margin-bottom:4px', text: 'Run your own, then save it as a macro' }),
     el('div', { style: 'display:flex;gap:4px' },

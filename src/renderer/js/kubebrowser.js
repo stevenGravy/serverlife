@@ -546,6 +546,13 @@ export async function openKubeBrowser(kubeSpec, title, opts = {}) {
       onClick: async () => (await import('./kubepanel.js')).showActivePortForwards({ contextName: kubeSpec.contextName }),
     },
     {
+      // Below the browser, the way an exec opens from it — a shell with its own
+      // kubeconfig on this cluster (kubepanel.js's openEcosystemShell).
+      icon: '>_', color: 'var(--green)', label: 'Shell',
+      title: 'A shell on this cluster, below — kubectl, helm and k9s already pointed at it',
+      onClick: async () => (await import('./kubepanel.js')).openEcosystemShell(kubeSpec, null, { dir: 'col', label: title || kubeSpec.kubeClusterName || kubeSpec.contextName }),
+    },
+    {
       icon: '🔑', color: 'var(--accent)', label: 'My access',
       title: 'Who this cluster sees you as, your groups, and what you can do — kubectl auth can-i',
       onClick: () => openAccessModal(),

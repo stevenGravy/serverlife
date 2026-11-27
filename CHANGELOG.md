@@ -11,6 +11,40 @@ tagged `v<version>`.
 
 ---
 
+## [0.42.2] — 2026-11-27
+
+Cluster shells that stay on their own cluster, open beside or below, and
+carry a helper with every command grouped; splits that say where they go.
+
+### Added
+
+- **A Shell button in the cluster browser**, opening a shell on that cluster
+  below it, the way an exec does.
+- **Open a shell here** splits right or down, as well as opening a tab.
+- **The K8s helper is a tree of commands** — eleven groups that open and
+  shut, and a search — in place of five buttons.
+- **A namespace picker in the K8s helper** — choose from the cluster's
+  namespaces (▾) or type one; the helper's commands use it, and so does
+  kubectl typed in that shell, through the shell's own kubeconfig.
+
+### Changed
+
+- **A cluster shell opens without a file browser**, and is titled with its
+  cluster.
+- **Split right / Split down**, on a pane's and a tab's menu, now offer where
+  the new pane goes: the same host again (the default, still ⌘⇧D / ⌘⇧E), a
+  local shell beside a server, or another host.
+
+### Fixed
+
+- **A cluster shell switched clusters on its own**: every shell read the
+  shared kubeconfig's current context, so opening one on us-west-2 moved
+  the one already open on eu-west-2. Each now has a kubeconfig of its own.
+
+
+
+---
+
 ## [0.42.1] — 2026-11-26
 
 A server session with a Kubernetes cluster set up in it, and a copy button

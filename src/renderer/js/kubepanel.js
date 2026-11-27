@@ -1873,8 +1873,13 @@ async function openKubeContextMenu(e, c, groupKey) {
     } : null,
     {
       label: 'Open a shell here',
-      title: 'A local shell with KUBECONFIG and --context already set — kubectl, helm, k9s, anything installed just works',
+      title: 'A local shell with its own kubeconfig on this cluster — kubectl, helm, k9s, anything installed just works',
       onClick: () => openEcosystemShell(c, null),
+      submenu: [
+        { label: 'In a new tab', onClick: () => openEcosystemShell(c, null) },
+        { label: 'Split right', onClick: () => openEcosystemShell(c, null, { dir: 'row' }) },
+        { label: 'Split down', onClick: () => openEcosystemShell(c, null, { dir: 'col' }) },
+      ],
     },
     await k9sMenuItem(c),
     // `tsh proxy kube` instead of `tsh kube login`: a local proxy any
@@ -2189,20 +2194,30 @@ async function kubeProxyMenuItem(c) {
  * to talk to, without the command having to name it. Same "program with no
  * Connection behind it" shape as a pod exec session (see openPodExec).
  */
-export async function openEcosystemShell(c, tool) {
+export async function openEcosystemShell(c, tool, { dir = null, label = null } = {}) {
   // On a per-session-MFA cluster, k9s (or anything else run here) would
   // otherwise make its own many separate kubectl-equivalent calls straight
   // through the exec-plugin kubeconfig, each its own MFA ceremony — the
   // same reason kubeBrowseSpec() exists for the browser pane.
   const spec = await kubeBrowseSpec(c);
-  // The platform's own path delimiter belongs on the main side, which is
-  // why this asks kube.js for the env rather than joining kubeconfigPaths
-  // here — the renderer has no path.delimiter to reach for.
-  const env = await window.api.kube.kubeconfigEnv(spec);
-  const title = tool ? `${tool}: ${c.kubeClusterName || c.name}` : `shell: ${c.kubeClusterName || c.name}`;
-  // The proxy's own kubeconfig has exactly one context, already current —
-  // naming the original context there would just fail to match.
-  const contextArgs = spec.viaProxy ? [] : ['--context=' + c.contextName];
+  /*
+   * Its own kubeconfig, holding only this cluster and already current
+   * (kube.js's shellKubeconfig). Pointing at the shared file instead left
+   * every shell on that file's current context — open one on eu-west-2,
+   * then one on us-west-2, and the first was on us-west-2 too. The proxy's
+   * kubeconfig already has exactly one context, so it is used as it is.
+   */
+  const own = spec.viaProxy ? null : await window.api.kube.shellKubeconfig(spec).catch(() => null);
+  const env = own?.ok ? own.env : await window.api.kube.kubeconfigEnv(spec);
+  // Only needed when the shell is still on a kubeconfig with several contexts.
+  const contextArgs = spec.viaProxy || own?.ok ? [] : ['--context=' + c.contextName];
+  const clusterName = label || c.kubeClusterName || c.name || c.contextName || 'cluster';
+  const title = tool ? `${tool}: ${clusterName}` : `shell: ${clusterName}`;
+  const { splitActivePane } = await import('./sessions.js');
+  // A new tab, or beside whatever is focused — right or down.
+  const open = (opts) => (dir && state.activePane
+    ? splitActivePane(dir, { local: true, ...opts })
+    : openLocalShell(null, opts));
   if (tool) {
     // The bare name resolves through PATH only if the tool happens to
     // live beside kubectl (the common case, not a guarantee) — the real
@@ -2211,26 +2226,39 @@ export async function openEcosystemShell(c, tool) {
     // TUI also has no use for a file browser of this machine beside it.
     let command = tool;
     try { command = (await window.api.kube.ecosystemStatus())?.[tool]?.path || tool; } catch { /* falls back to the bare name */ }
-    await openLocalShell(null, { command, args: contextArgs, env, title, explorer: false });
+    await open({ command, args: contextArgs, env, title, explorer: false });
     return;
   }
-  // A plain shell still needs --context honoured by whatever is typed into
-  // it, which env vars alone cannot do — KUBECTL_CONTEXT is not a thing
-  // kubectl reads. kubeconfig's own `current-context` is the one knob nothing
-  // needs to be told about twice, so it is set for just this shell's env by
-  // writing it into the merged config... except kubeconfig has no per-env
-  // override for that either. Simplest honest answer: name it in the title
-  // and leave `--context=` to be typed, the same as a fresh terminal would.
-  const pane = await openLocalShell(null, { env, title });
+  // A shell for kubectl and helm, not for browsing this machine's files.
+  const pane = await open({ env, title, explorer: false });
+  if (!pane) return;
+  // A split from here (⌘⇧D / ⌘⇧E) is another shell on this cluster, with a kubeconfig of its own.
+  pane.kubeShellCtx = c;
+  pane.title = title;
+  (await import('./sessions.js')).refreshPaneTitles?.();
   const { attachCloudHelper } = await import('./sidebar.js');
+  // What the Namespace box offers: what the cluster lists, read through
+  // this shell's own kubeconfig, and any typed for this context before.
+  const loadNamespaces = async () => {
+    const r = await window.api.kube.namespaces(own?.ok ? { kubeconfigPaths: [own.path] } : { ...spec, namespace: null })
+      .catch(() => null);
+    const listed = r?.ok ? r.namespaces : [];
+    const { extraNamespaces } = await import('./kubenamespaces.js');
+    return [...listed, ...extraNamespaces(c.contextName, listed, c.namespace || '')].sort();
+  };
   attachCloudHelper(pane, {
     cloud: 'K8s',
-    name: c.kubeClusterName || c.name,
-    contextArg: spec.viaProxy ? '' : contextArgs.join(' '),
+    name: clusterName,
+    contextArg: contextArgs.join(' '),
+    namespace: c.namespace || '',
+    loadNamespaces,
+    // Only a shell with a kubeconfig of its own can have its default moved.
+    onNamespace: own?.ok ? (ns) => window.api.kube.setShellNamespace({ file: own.path, namespace: ns }) : null,
   });
   toast(spec.viaProxy
     ? 'KUBECONFIG set to the tsh proxy kube tunnel — already the only context in it'
-    : `KUBECONFIG set — add --context=${c.contextName} to kubectl/helm commands here`, 'info');
+    : own?.ok ? `This shell has its own kubeconfig, on ${clusterName} — other shells can't move it`
+      : `KUBECONFIG set — add --context=${c.contextName} to kubectl/helm commands here`, 'info');
 }
 
 /** A file picker, appending to settings.kubeconfigPaths — kube.contexts() already reads every path there as `extraPaths`, so adding one just means picking it and saving it. */

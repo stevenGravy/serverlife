@@ -2632,6 +2632,9 @@ function registerIpc() {
   handle('kube:nodeDebugSpec', async (opts) => kube.nodeDebugSpec(opts || {}));
   handle('kube:logSpec', async (opts) => kube.logSpec(opts || {}, opts || {}));
   handle('kube:kubeconfigEnv', async (opts) => kube.kubeconfigEnvFor(opts || {}));
+  // A cluster shell's own one-context kubeconfig, so another shell can't move it (kube.shellKubeconfig).
+  handle('kube:shellKubeconfig', async (opts) => kube.shellKubeconfig(opts || {}));
+  handle('kube:setShellNamespace', async (opts) => kube.setShellNamespace(opts || {}));
   // The Log Viewer: one pod, or every pod behind a label selector, tailed
   // as plain lines rather than a PTY — see kubelogs.js. Each line (and the
   // final exit) is pushed as it arrives rather than polled for.

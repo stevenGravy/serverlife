@@ -2,7 +2,7 @@ import { state } from './state.js';
 import { $, el, clear } from './util.js';
 import { contextMenu, prompt } from './ui.js';
 import {
-  requestCloseTab, requestCloseTabs, duplicateActiveTab, splitActivePane, renderPanes, paneTitle, focusActivePane,
+  requestCloseTab, requestCloseTabs, duplicateActiveTab, splitMenuItems, renderPanes, paneTitle, focusActivePane,
   draggingPaneId, movePaneToTab, movePaneToNewTab,
 } from './sessions.js';
 // The per-host colour lives with the host list, which owns the key it is stored under.
@@ -147,8 +147,7 @@ export function renderTabs() {
       renderPanes();
       contextMenu(e.clientX, e.clientY, [
         { label: 'Duplicate tab', key: '⌘D', onClick: () => duplicateActiveTab() },
-        { label: 'Split right', key: '⌘⇧D', onClick: () => splitActivePane('row') },
-        { label: 'Split down', key: '⌘⇧E', onClick: () => splitActivePane('col') },
+        ...splitMenuItems(),
         { sep: true },
         {
           label: 'Rename…',

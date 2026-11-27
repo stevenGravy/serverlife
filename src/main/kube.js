@@ -337,6 +337,58 @@ function kubeconfigEnvFor(spec = {}) {
   return kubectlArgsFor(spec).env;
 }
 
+/*
+ * A shell's own kubeconfig, holding only its cluster.
+ *
+ * KUBECONFIG pointed at the shared file left every cluster shell on that
+ * file's `current-context` — which the next `tsh kube login`, or a shell for
+ * another cluster, moves. A shell opened on eu-west-2 was on us-west-2 the
+ * moment one was opened there. So each shell gets a copy of just its context
+ * (`kubectl config view --minify --flatten`), already current: a tsh exec
+ * plugin entry comes along as it is, so credentials still refresh through
+ * tsh, and nothing outside the shell can move it. One file per shell, so a
+ * `use-context` typed in one shell stays there too.
+ */
+async function shellKubeconfig(spec = {}) {
+  if (!spec.contextName) return { ok: true, env: kubeconfigEnvFor(spec), path: null };
+  const crypto = require('crypto');
+  const { bin, baseArgs, env } = kubectlArgsFor({ ...spec, namespace: null });
+  const r = await execBin(bin, [...baseArgs, 'config', 'view', '--minify', '--flatten'], { env, timeout: 15000 });
+  if (!r.ok || !r.stdout.trim()) return { ok: false, error: plain(r.stderr) || 'kubectl config view failed', env: kubeconfigEnvFor(spec) };
+  const dir = shellKubeconfigDir();
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // A week is long past any shell still open on one of these.
+  const old = Date.now() - 7 * 24 * 3600 * 1000;
+  for (const f of fs.readdirSync(dir)) {
+    try { if (fs.statSync(path.join(dir, f)).mtimeMs < old) fs.unlinkSync(path.join(dir, f)); } catch { /* gone already */ }
+  }
+  const safe = String(spec.contextName).replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 60);
+  const file = path.join(dir, `${safe}-${crypto.randomBytes(4).toString('hex')}.yaml`);
+  fs.writeFileSync(file, r.stdout, { mode: 0o600 });
+  return { ok: true, env: { ...env, KUBECONFIG: file }, path: file };
+}
+
+function shellKubeconfigDir() {
+  return path.join(os.tmpdir(), `serverlife-kube-shells-${process.getuid ? process.getuid() : 'u'}`);
+}
+
+/*
+ * The namespace a cluster shell's own kubeconfig defaults to — so kubectl
+ * typed by hand in that shell follows the helper's Namespace choice too.
+ * Only ever a file shellKubeconfig() wrote: nothing else is touched, the
+ * shared kubeconfig least of all. '' puts it back to the context's default.
+ */
+async function setShellNamespace({ file, namespace = '' } = {}) {
+  const dir = shellKubeconfigDir();
+  const real = file ? path.resolve(file) : '';
+  if (!real || path.dirname(real) !== dir || !fs.existsSync(real)) return { ok: false, error: 'Not a cluster shell kubeconfig' };
+  const ns = String(namespace || '').trim();
+  if (ns && !/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test(ns)) return { ok: false, error: `"${ns}" is not a namespace name` };
+  const { bin, baseArgs, env } = kubectlArgsFor({ kubeconfigPaths: [real] });
+  const r = await execBin(bin, [...baseArgs, 'config', 'set-context', '--current', '--namespace=' + ns], { env, timeout: 10000 });
+  return r.ok ? { ok: true } : { ok: false, error: plain(r.stderr) || 'kubectl config set-context failed' };
+}
+
 /** Namespaces in one context — `kubectl get namespaces -o json`. */
 async function listNamespaces(spec = {}) {
   const { bin, baseArgs, env } = kubectlArgsFor({ ...spec, namespace: null });
@@ -669,5 +721,5 @@ async function loginKubeCluster({ proxy, home, cluster } = {}) {
 module.exports = {
   supported, listKubeClusters, kubectlArgsFor, loginKubeCluster, toKubeCluster,
   defaultKubeconfigPaths, listContexts, teleportOriginOf, useContext, deleteContext, editContext,
-  listNamespaces, listPods, execSpec, execRun, attachSpec, debugSpec, nodeDebugSpec, logArgs, logSpec, kubeconfigEnvFor, installTeleportAgent, commandPreview, shellQuote, AGENT_ROLES, teleportAgentValues, helmArgsFor,
+  listNamespaces, listPods, execSpec, execRun, attachSpec, debugSpec, nodeDebugSpec, logArgs, logSpec, kubeconfigEnvFor, shellKubeconfig, setShellNamespace, installTeleportAgent, commandPreview, shellQuote, AGENT_ROLES, teleportAgentValues, helmArgsFor,
 };

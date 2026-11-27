@@ -4341,3 +4341,13 @@ input.needed, textarea.needed {
   font-size: 11px; line-height: 1; padding: 3px 4px; border-radius: 4px; cursor: pointer;
 }
 .filter-clear:hover { color: var(--text); background: var(--panel-2); }
+
+/* The cloud / K8s helper beside a CLI shell (sidebar.js attachCloudHelper): a tree of command groups. */
+.cloud-helper { flex: none; width: 260px; overflow-y: auto; border-left: 1px solid var(--border-soft); padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.cloud-helper .field { margin-bottom: 2px; }
+.cloud-helper .helper-sec { display: flex; align-items: center; gap: 6px; padding: 5px 2px 3px; font-size: 11px; font-weight: 600;
+  letter-spacing: .03em; text-transform: uppercase; color: var(--muted); cursor: pointer; user-select: none; }
+.cloud-helper .helper-sec:hover { color: var(--text); }
+.cloud-helper .helper-sec .chev { font-size: 8px; width: 9px; }
+.cloud-helper .helper-sec .count { margin-left: auto; font-weight: 400; }
+.cloud-helper .helper-cmd { display: block; width: 100%; text-align: left; margin: 0 0 2px 14px; width: calc(100% - 14px); }
